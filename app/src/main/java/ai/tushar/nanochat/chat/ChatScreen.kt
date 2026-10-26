@@ -72,6 +72,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -88,6 +90,8 @@ private val BubbleMaxWidth = 560.dp
 private const val BubbleMaxFraction = 0.82f
 private val BubbleRadius = 20.dp
 private val BubbleTail = 6.dp
+private val AvatarSize = 30.dp
+private val AvatarGutter = AvatarSize + 8.dp
 
 /** Actions on the agent itself, handled by the shell because they can close this screen. */
 data class AgentActions(
@@ -284,11 +288,11 @@ private fun MessageList(state: ChatState, agent: Agent, tint: androidx.compose.u
                                 }
                             }
                         } else {
-                            AgentLine(tint, showAvatar = row.lastInGroup, topGap = gap, maxBubble = maxBubble) {
-                                Column {
+                            Column {
+                                AgentLine(tint, showAvatar = row.lastInGroup, topGap = gap, maxBubble = maxBubble) {
                                     Bubble(Role.Agent, tail = row.lastInGroup) { BubbleText(row.message.text, Role.Agent) }
-                                    DevOnly { ReplyStats(row.message, Modifier.padding(start = 6.dp, top = 3.dp)) }
                                 }
+                                DevOnly { ReplyStats(row.message, Modifier.padding(start = AvatarGutter + 6.dp, top = 3.dp)) }
                             }
                         }
                     }
@@ -307,11 +311,11 @@ private fun AgentLine(
     content: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth().padding(top = topGap), verticalAlignment = Alignment.Bottom) {
-        Box(Modifier.size(30.dp), contentAlignment = Alignment.BottomCenter) {
-            if (showAvatar) Blob(tint, 30.dp)
+        Box(Modifier.size(AvatarSize), contentAlignment = Alignment.BottomCenter) {
+            if (showAvatar) Blob(tint, AvatarSize)
         }
-        Spacer(Modifier.width(8.dp))
-        Box(Modifier.widthIn(max = maxBubble - 38.dp)) { content() }
+        Spacer(Modifier.width(AvatarGutter - AvatarSize))
+        Box(Modifier.widthIn(max = maxBubble - AvatarGutter)) { content() }
     }
 }
 
@@ -426,7 +430,7 @@ private fun Composer(
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     maxLines = 6,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().semantics { contentDescription = placeholder },
                 )
             }
         }

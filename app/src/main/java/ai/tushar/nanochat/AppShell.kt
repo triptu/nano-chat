@@ -25,6 +25,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +40,7 @@ import androidx.compose.material3.adaptive.layout.AnimatedPane
 import androidx.compose.material3.adaptive.layout.ListDetailPaneScaffoldRole
 import androidx.compose.material3.adaptive.layout.PaneAdaptedValue
 import androidx.compose.material3.adaptive.layout.calculatePaneScaffoldDirective
+import androidx.compose.material3.adaptive.navigation.BackNavigationBehavior
 import androidx.compose.material3.adaptive.navigation.NavigableListDetailPaneScaffold
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
 import androidx.compose.runtime.Composable
@@ -133,11 +135,15 @@ private fun AppShell() {
     val detailVisible = navigator.scaffoldValue[ListDetailPaneScaffoldRole.Detail] == PaneAdaptedValue.Expanded
     val singlePane = navigator.scaffoldValue[ListDetailPaneScaffoldRole.List] != PaneAdaptedValue.Expanded || !detailVisible
 
-    fun show(d: Detail) = scope.launch { navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, d.key) }
-    fun back() = scope.launch { navigator.navigateBack() }
+    fun show(d: Detail) = scope.launch {
+        if (d is Detail.Chat && detail is Detail.Chat && detailVisible) navigator.navigateBack(BackNavigationBehavior.PopLatest)
+        navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, d.key)
+    }
+    fun back() = scope.launch { navigator.navigateBack(BackNavigationBehavior.PopUntilContentChange) }
 
     NavigableListDetailPaneScaffold(
         navigator = navigator,
+        defaultBackBehavior = BackNavigationBehavior.PopUntilContentChange,
         listPane = {
             AnimatedPane(Modifier.preferredWidth(380.dp)) {
                 val homeVm = graphViewModel { HomeViewModel(it) }
@@ -151,7 +157,9 @@ private fun AppShell() {
             }
         },
         detailPane = {
-            AnimatedPane {
+            // The scaffold moves focus into a pane when it opens. A focusable root takes it, so text fields
+            // don't grab focus and pop the keyboard.
+            AnimatedPane(Modifier.focusable()) {
                 when (val d = detail) {
                     is Detail.Chat -> {
                         val vm = graphViewModel(key = d.key) { ChatViewModel(it, d.agentId) }

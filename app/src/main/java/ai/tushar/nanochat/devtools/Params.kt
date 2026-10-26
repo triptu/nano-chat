@@ -40,19 +40,17 @@ fun ParamSliders(params: GenerationParams, onChange: (GenerationParams) -> Unit)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         LabeledSlider(
             "Temperature", String.format(Locale.US, "%.2f", params.temperature),
-            value = params.temperature, range = GenerationParams.TemperatureRange, steps = 19,
+            value = params.temperature, range = GenerationParams.TemperatureRange,
         ) { onChange(params.copy(temperature = (it * 20).roundToInt() / 20f)) }
         LabeledSlider(
             "Top K", params.topK.toString(),
             value = params.topK.toFloat(),
             range = GenerationParams.TopKRange.first.toFloat()..GenerationParams.TopKRange.last.toFloat(),
-            steps = GenerationParams.TopKRange.last - GenerationParams.TopKRange.first - 1,
         ) { onChange(params.copy(topK = it.roundToInt())) }
         LabeledSlider(
             "Max output tokens", params.maxOutputTokens.toString(),
             value = params.maxOutputTokens.toFloat(),
             range = GenerationParams.MaxOutputRange.first.toFloat()..GenerationParams.MaxOutputRange.last.toFloat(),
-            steps = (GenerationParams.MaxOutputRange.last - GenerationParams.MaxOutputRange.first) / 32 - 1,
         ) { onChange(params.copy(maxOutputTokens = ((it / 32).roundToInt() * 32).coerceIn(GenerationParams.MaxOutputRange))) }
     }
 }
@@ -63,7 +61,6 @@ private fun LabeledSlider(
     valueText: String,
     value: Float,
     range: ClosedFloatingPointRange<Float>,
-    steps: Int,
     onChange: (Float) -> Unit,
 ) {
     Column {
@@ -71,7 +68,7 @@ private fun LabeledSlider(
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(valueText, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
-        Slider(value = value, onValueChange = onChange, valueRange = range, steps = steps)
+        Slider(value = value, onValueChange = onChange, valueRange = range)
     }
 }
 

@@ -88,7 +88,7 @@ private val LightChat = ChatColors(
     onUserBubble = Color(0xFF2E140A),
     agentBubble = Color(0xFFFFFFFF),
     onAgentBubble = Color(0xFF2B211C),
-    faint = Color(0xFF8A786C),
+    faint = Color(0xFF76645A),
 )
 
 private val DarkChat = ChatColors(

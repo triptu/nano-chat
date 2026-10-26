@@ -13,7 +13,9 @@ import ai.tushar.nanochat.ui.Ico
 import ai.tushar.nanochat.ui.Icons
 import ai.tushar.nanochat.ui.relativeTime
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -177,10 +179,14 @@ private fun ModelCard(s: StatsState, vm: StatsViewModel) {
             Text("Fake model behaviour", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
             FakeScenario.entries.forEach { sc ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { vm.setScenario(sc) }.padding(vertical = 6.dp),
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .selectable(selected = s.fakeScenario == sc, role = Role.RadioButton) { vm.setScenario(sc) },
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    androidx.compose.material3.RadioButton(selected = s.fakeScenario == sc, onClick = { vm.setScenario(sc) })
+                    androidx.compose.material3.RadioButton(selected = s.fakeScenario == sc, onClick = null)
                     Text(sc.label, style = MaterialTheme.typography.bodyMedium)
                 }
             }
