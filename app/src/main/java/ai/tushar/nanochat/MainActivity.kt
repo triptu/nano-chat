@@ -1,16 +1,20 @@
 package ai.tushar.nanochat
 
+import ai.tushar.nanochat.ui.theme.NanoChatTheme
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material3.Text
-import ai.tushar.nanochat.ui.theme.NanoChatTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        setContent { NanoChatTheme { Text("hi") } }
+        setContent { NanoChatTheme { AppRoot() } }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        graph.model.refresh()
     }
 }
