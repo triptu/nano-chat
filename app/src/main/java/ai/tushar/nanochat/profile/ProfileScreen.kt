@@ -5,6 +5,8 @@ import ai.tushar.nanochat.home.ProfileBadge
 import ai.tushar.nanochat.ui.Ico
 import ai.tushar.nanochat.ui.Icons
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -100,7 +102,10 @@ fun ProfileScreen(vm: ProfileViewModel, onBack: () -> Unit, onOpenStats: () -> U
             Surface(color = MaterialTheme.colorScheme.surfaceContainerLowest, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Row(
-                        Modifier.fillMaxWidth().clickable { vm.setDevTools(!devTools) }.padding(16.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .toggleable(value = devTools, role = Role.Switch, onValueChange = { vm.setDevTools(it) })
+                            .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
@@ -112,7 +117,7 @@ fun ProfileScreen(vm: ProfileViewModel, onBack: () -> Unit, onOpenStats: () -> U
                             )
                         }
                         Spacer(Modifier.width(12.dp))
-                        Switch(checked = devTools, onCheckedChange = vm::setDevTools)
+                        Switch(checked = devTools, onCheckedChange = null)
                     }
                     if (devTools) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))

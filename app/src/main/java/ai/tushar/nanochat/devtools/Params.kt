@@ -14,6 +14,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -24,7 +29,7 @@ fun ReplyStats(message: Message, modifier: Modifier = Modifier) {
     val parts = buildList {
         message.ttftMs?.let { add(String.format(Locale.US, "%.2f s to first token", it / 1000f)) }
         message.tokensPerSecond?.let { add("${it.roundToInt()} tok/s") }
-        message.outputTokens?.let { add("$it tokens") }
+        message.outputTokens?.let { add(if (it == 1) "1 token" else "$it tokens") }
     }
     if (parts.isEmpty()) return
     Text(
@@ -68,7 +73,12 @@ private fun LabeledSlider(
             Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             Text(valueText, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
-        Slider(value = value, onValueChange = onChange, valueRange = range)
+        Slider(
+            value = value,
+            onValueChange = onChange,
+            valueRange = range,
+            modifier = Modifier.semantics { contentDescription = label; stateDescription = valueText },
+        )
     }
 }
 
@@ -83,7 +93,16 @@ fun AgentParamsSection(
 ) {
     val custom = temperature != null || topK != null || maxOutputTokens != null
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.toggleable(
+                value = custom,
+                role = Role.Switch,
+                onValueChange = { on ->
+                    if (on) onChange(defaults.temperature, defaults.topK, defaults.maxOutputTokens) else onChange(null, null, null)
+                },
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Column(Modifier.weight(1f)) {
                 Text("Own model settings", style = MaterialTheme.typography.titleSmall)
                 Text(
@@ -92,12 +111,7 @@ fun AgentParamsSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Switch(
-                checked = custom,
-                onCheckedChange = { on ->
-                    if (on) onChange(defaults.temperature, defaults.topK, defaults.maxOutputTokens) else onChange(null, null, null)
-                },
-            )
+            Switch(checked = custom, onCheckedChange = null)
         }
         if (custom) {
             val p = GenerationParams(

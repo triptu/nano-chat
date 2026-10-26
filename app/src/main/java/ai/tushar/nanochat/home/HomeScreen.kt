@@ -10,7 +10,14 @@ import ai.tushar.nanochat.ui.mascot.BlobAvatar
 import ai.tushar.nanochat.ui.relativeTime
 import ai.tushar.nanochat.ui.theme.tone
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import ai.tushar.nanochat.ui.mascot.Blob
+import androidx.compose.material3.Button
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -101,7 +108,9 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Nano Chat", style = MaterialTheme.typography.headlineMedium) },
                 actions = {
-                    IconButton(onClick = onOpenProfile) { ProfileBadge(state.displayName) }
+                    IconButton(onClick = onOpenProfile, modifier = Modifier.semantics { contentDescription = "Profile" }) {
+                        ProfileBadge(state.displayName, modifier = Modifier.clearAndSetSemantics {})
+                    }
                 },
                 scrollBehavior = scroll,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -124,6 +133,7 @@ fun HomeScreen(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 96.dp),
         ) {
+            if (state.loaded && state.rows.isEmpty()) item { EmptyHome(onNewAgent) }
             items(state.rows, key = { it.agent.id }) { row ->
                 AgentRowItem(row, selected = row.agent.id == selectedAgentId, onClick = { onOpenAgent(row.agent.id) })
             }
@@ -132,9 +142,9 @@ fun HomeScreen(
 }
 
 @Composable
-fun ProfileBadge(name: String, size: androidx.compose.ui.unit.Dp = 34.dp) {
+fun ProfileBadge(name: String, size: androidx.compose.ui.unit.Dp = 34.dp, modifier: Modifier = Modifier) {
     Box(
-        Modifier
+        modifier
             .size(size)
             .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
         contentAlignment = Alignment.Center,
@@ -159,9 +169,9 @@ private fun AgentRowItem(row: AgentRow, selected: Boolean, onClick: () -> Unit) 
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 8.dp)
-            .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else androidx.compose.ui.graphics.Color.Transparent, MaterialTheme.shapes.large)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent, MaterialTheme.shapes.large)
             .clip(MaterialTheme.shapes.large)
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -197,3 +207,24 @@ private fun AgentRowItem(row: AgentRow, selected: Boolean, onClick: () -> Unit) 
 }
 
 
+
+@Composable
+private fun EmptyHome(onNewAgent: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 64.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Blob(ai.tushar.nanochat.data.AgentColor.Coral.tone(isSystemInDarkTheme()), 96.dp)
+        Spacer(Modifier.height(16.dp))
+        Text("No friends yet", style = MaterialTheme.typography.headlineSmall)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Make one and start chatting. Everything stays on this phone.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(20.dp))
+        Button(onClick = onNewAgent) { Text("New friend") }
+    }
+}

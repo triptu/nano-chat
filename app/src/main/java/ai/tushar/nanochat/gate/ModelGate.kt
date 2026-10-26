@@ -78,7 +78,7 @@ fun ModelGate(state: ModelState, onDownload: () -> Unit, onRetry: () -> Unit, on
                             Spacer(Modifier.height(10.dp))
                             Text(
                                 "${state.downloadedBytes * 100 / total}% · ${mb(state.downloadedBytes)} of ${mb(total)}",
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelLarge.copy(fontFeatureSettings = "tnum"),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         } else {
@@ -98,7 +98,8 @@ fun ModelGate(state: ModelState, onDownload: () -> Unit, onRetry: () -> Unit, on
                     }
                     is ModelState.Failed -> {
                         Title("Nano couldn't get ready")
-                        Body(state.message)
+                        Body("Something stopped the model from loading. Check your connection and try again.")
+                        if (LocalDevTools.current) Body(state.message)
                         Spacer(Modifier.height(24.dp))
                         Button(onClick = onRetry) { Text("Try again") }
                         if (LocalDevTools.current) TextButton(onClick = onUseFake) { Text("Use the fake model") }

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -191,7 +192,7 @@ private fun ModelCard(s: StatsState, vm: StatsViewModel) {
                 }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             FilledTonalButton(onClick = vm::download, enabled = s.model == ModelState.Downloadable || s.model is ModelState.Failed) { Text("Download") }
             FilledTonalButton(onClick = vm::warmup, enabled = s.model == ModelState.Ready) { Text("Warm up") }
             OutlinedButton(onClick = vm::refresh) { Text("Check again") }

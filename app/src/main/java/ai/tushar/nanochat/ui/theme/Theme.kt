@@ -32,7 +32,7 @@ data class ChatColors(
 )
 
 private val LightScheme: ColorScheme = lightColorScheme(
-    primary = Color(0xFFD9583A),
+    primary = Color(0xFFB5432A),
     onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFFFD9CC),
     onPrimaryContainer = Color(0xFF3B1408),
@@ -52,7 +52,7 @@ private val LightScheme: ColorScheme = lightColorScheme(
     surfaceContainer = Color(0xFFFBECDD),
     surfaceContainerHigh = Color(0xFFF7E6D5),
     surfaceContainerHighest = Color(0xFFF2DFCC),
-    outline = Color(0xFFB9A595),
+    outline = Color(0xFF958170),
     outlineVariant = Color(0xFFEBDACA),
     error = Color(0xFFB3261E),
 )

@@ -72,6 +72,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -134,6 +139,7 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
                                 AnimatedContent(status, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "status") {
                                     Text(
                                         it,
+                                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                                         style = MaterialTheme.typography.labelMedium,
                                         color = if (state.pending != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -214,15 +220,18 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
             title = { Text(if (c == Confirm.Clear) "Clear this chat?" else "Delete $name?") },
             text = {
                 Text(
-                    if (c == Confirm.Clear) "All messages with $name will be removed. $name stays in your list."
-                    else "$name and all your messages together will be removed.",
+                    if (c == Confirm.Clear) "All messages with $name will be deleted. $name stays in your list. This can't be undone."
+                    else "$name and your chat will be deleted. This can't be undone.",
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    confirm = null
-                    agent?.let { if (c == Confirm.Clear) actions.onClear(it) else actions.onDelete(it) }
-                }) { Text(if (c == Confirm.Clear) "Clear" else "Delete") }
+                TextButton(
+                    onClick = {
+                        confirm = null
+                        agent?.let { if (c == Confirm.Clear) actions.onClear(it) else actions.onDelete(it) }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text(if (c == Confirm.Clear) "Clear chat" else "Delete $name") }
             },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } },
         )
@@ -284,13 +293,13 @@ private fun MessageList(state: ChatState, agent: Agent, tint: androidx.compose.u
                         if (row.message.role == Role.User) {
                             Row(Modifier.fillMaxWidth().padding(top = gap), horizontalArrangement = Arrangement.End) {
                                 Box(Modifier.widthIn(max = maxBubble)) {
-                                    Bubble(Role.User, tail = row.lastInGroup) { BubbleText(row.message.text, Role.User) }
+                                    Bubble(Role.User, tail = row.lastInGroup, speech = "You: ${row.message.text}") { BubbleText(row.message.text, Role.User) }
                                 }
                             }
                         } else {
                             Column {
                                 AgentLine(tint, showAvatar = row.lastInGroup, topGap = gap, maxBubble = maxBubble) {
-                                    Bubble(Role.Agent, tail = row.lastInGroup) { BubbleText(row.message.text, Role.Agent) }
+                                    Bubble(Role.Agent, tail = row.lastInGroup, speech = "${agent.name}: ${row.message.text}") { BubbleText(row.message.text, Role.Agent) }
                                 }
                                 DevOnly { ReplyStats(row.message, Modifier.padding(start = AvatarGutter + 6.dp, top = 3.dp)) }
                             }
@@ -320,7 +329,7 @@ private fun AgentLine(
 }
 
 @Composable
-private fun Bubble(role: Role, tail: Boolean, content: @Composable () -> Unit) {
+private fun Bubble(role: Role, tail: Boolean, speech: String? = null, content: @Composable () -> Unit) {
     val colors = LocalChatColors.current
     val mine = role == Role.User
     val small = if (tail) BubbleTail else BubbleRadius
@@ -334,6 +343,7 @@ private fun Bubble(role: Role, tail: Boolean, content: @Composable () -> Unit) {
         contentColor = if (mine) colors.onUserBubble else colors.onAgentBubble,
         shape = shape,
         shadowElevation = if (mine) 0.dp else 0.5.dp,
+        modifier = if (speech != null) Modifier.semantics(mergeDescendants = true) { contentDescription = speech } else Modifier,
     ) {
         Box(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) { content() }
     }
@@ -390,7 +400,10 @@ private fun ProblemCard(message: String, canRetry: Boolean, onRetry: () -> Unit)
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shape = MaterialTheme.shapes.large,
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
     ) {
         Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(message, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(vertical = 6.dp))
@@ -416,14 +429,25 @@ private fun Composer(
         Surface(
             color = colors.agentBubble,
             shape = RoundedCornerShape(24.dp),
-            shadowElevation = 0.5.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.weight(1f),
         ) {
             Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 18.dp, vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
-                if (value.isEmpty()) {
-                    Text(placeholder, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                }
                 BasicTextField(
+                    decorationBox = { inner ->
+                        Box(contentAlignment = Alignment.CenterStart) {
+                            if (value.isEmpty()) {
+                                Text(
+                                    placeholder,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    modifier = Modifier.clearAndSetSemantics {},
+                                )
+                            }
+                            inner()
+                        }
+                    },
                     value = value,
                     onValueChange = onValueChange,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onAgentBubble),

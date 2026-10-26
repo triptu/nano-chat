@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
@@ -151,7 +153,7 @@ fun AgentEditorSheet(
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 AgentColor.entries.forEach { c ->
                     val selected = c == draft.color
                     Box(
@@ -164,7 +166,7 @@ fun AgentEditorSheet(
                             .semantics { contentDescription = c.name; this.selected = selected },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (selected) Ico(Icons.Check, null, size = 18.dp, tint = MaterialTheme.colorScheme.surface)
+                        if (selected) Ico(Icons.Check, null, size = 18.dp, tint = Color(0xFF2E140A))
                     }
                 }
             }
