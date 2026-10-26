@@ -5,6 +5,8 @@ import ai.tushar.nanochat.data.Generation
 import ai.tushar.nanochat.data.GenerationTotals
 import ai.tushar.nanochat.model.BackendKind
 import ai.tushar.nanochat.model.FakeScenario
+import ai.tushar.nanochat.gate.bytesText
+import ai.tushar.nanochat.model.ModelId
 import ai.tushar.nanochat.model.ModelInfo
 import ai.tushar.nanochat.model.ModelState
 import ai.tushar.nanochat.settings.BackendChoice
@@ -15,6 +17,12 @@ import ai.tushar.nanochat.ui.relativeTime
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.remember
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -69,34 +77,49 @@ import kotlin.math.roundToInt
 private const val LogSize = 30
 
 data class StatsState(
-    val model: ModelState = ModelState.Checking,
-    val info: ModelInfo = ModelInfo(ai.tushar.nanochat.model.ModelId.Nano, BackendKind.Real, BackendChoice.Auto, null),
+    val states: Map<ModelId, ModelState> = ModelId.entries.associateWith { ModelState.Checking },
+    val infos: Map<ModelId, ModelInfo> = ModelId.entries.associateWith { ModelInfo(it, BackendKind.Real, BackendChoice.Auto, null) },
+    val defaultModel: ModelId = ModelId.Default,
     val fakeScenario: FakeScenario = FakeScenario.Normal,
     val defaults: GenerationParams = GenerationParams.Default,
     val totals: GenerationTotals? = null,
     val messageCount: Int = 0,
     val log: List<Pair<Generation, String>> = emptyList(),
+) {
+    /** Real or fake applies to every model at once, so any model's info says which. */
+    val choice: BackendChoice get() = infos.values.first().choice
+    val anyFake: Boolean get() = infos.values.any { it.backend == BackendKind.Fake }
+}
+
+private data class ModelsPart(
+    val states: Map<ModelId, ModelState>,
+    val infos: Map<ModelId, ModelInfo>,
+    val defaultModel: ModelId,
+    val scenario: FakeScenario,
 )
 
 class StatsViewModel(private val graph: AppGraph) : ViewModel() {
     private val names = graph.dao.agentPreviews().map { list -> list.associate { it.agent.id to it.agent.name } }
 
     val state: StateFlow<StatsState> = combine(
-        combine(graph.models.state(ai.tushar.nanochat.model.ModelId.Nano), graph.models.info(ai.tushar.nanochat.model.ModelId.Nano), graph.settings.fakeScenario, ::Triple),
+        combine(graph.models.states, graph.models.infos, graph.settings.defaultModel, graph.settings.fakeScenario, ::ModelsPart),
         graph.settings.defaultParams,
         graph.dao.generationTotals(),
         graph.dao.messageCount(),
         combine(graph.dao.recentGenerations(LogSize), names) { gens, n -> gens.map { it to (n[it.agentId] ?: "?") } },
-    ) { (model, info, scenario), defaults, totals, count, log ->
-        StatsState(model, info, scenario, defaults, totals, count, log)
+    ) { m, defaults, totals, count, log ->
+        StatsState(m.states, m.infos, m.defaultModel, m.scenario, defaults, totals, count, log)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsState())
 
     fun setDefaults(p: GenerationParams) = viewModelScope.launch { graph.settings.setDefaultParams(p) }
+    fun setDefaultModel(m: ModelId) = viewModelScope.launch { graph.settings.setDefaultModel(m) }
     fun setBackend(c: BackendChoice) = viewModelScope.launch { graph.settings.setBackendChoice(c) }
     fun setScenario(s: FakeScenario) = viewModelScope.launch { graph.settings.setFakeScenario(s) }
-    fun download() = graph.models.download(ai.tushar.nanochat.model.ModelId.Nano)
-    fun refresh() = graph.models.refresh()
-    fun warmup() = graph.models.warm(ai.tushar.nanochat.model.ModelId.Nano)
+    fun download(id: ModelId) = graph.models.download(id)
+    fun cancel(id: ModelId) = graph.models.cancelDownload(id)
+    fun remove(id: ModelId) = graph.models.delete(id)
+    fun refresh(id: ModelId) = graph.models.refresh(id)
+    fun load(id: ModelId) = graph.models.warm(id)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -119,7 +142,9 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { ModelCard(s, vm) }
+            item { DefaultModelCard(s, vm) }
+            item { RealOrFakeCard(s, vm) }
+            items(ModelId.entries, key = { it.name }) { id -> ModelCard(id, s.states.getValue(id), s.infos.getValue(id), vm) }
             item {
                 Card("Default model settings") {
                     Text(
@@ -155,56 +180,154 @@ private fun Card(title: String, content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModelCard(s: StatsState, vm: StatsViewModel) {
-    val info = s.info
-    Card("Model") {
+private fun DefaultModelCard(s: StatsState, vm: StatsViewModel) {
+    Card("Default model") {
+        Text(
+            "Companions use this unless they pick their own model in their edit sheet.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            ModelId.entries.forEachIndexed { i, m ->
+                SegmentedButton(
+                    selected = s.defaultModel == m,
+                    onClick = { vm.setDefaultModel(m) },
+                    shape = SegmentedButtonDefaults.itemShape(i, ModelId.entries.size),
+                ) { Text(m.label, maxLines = 1) }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RealOrFakeCard(s: StatsState, vm: StatsViewModel) {
+    Card("Real or fake models") {
+        Text(
+            "Applies to every model. Auto uses the real ones, and in debug builds falls back to the fake one where a real model can't run.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             BackendChoice.entries.forEachIndexed { i, c ->
                 SegmentedButton(
-                    selected = info.choice == c,
+                    selected = s.choice == c,
                     onClick = { vm.setBackend(c) },
                     shape = SegmentedButtonDefaults.itemShape(i, BackendChoice.entries.size),
                 ) { Text(c.label) }
             }
         }
-        Fact("Running", info.id.label + if (info.backend == BackendKind.Fake) " (fake)" else "")
-        Fact("Status", statusText(s.model))
-        Fact("Real model check", info.realAvailability?.name ?: "no answer from AICore")
-        info.baseModelName?.let { Fact("Base model", it) }
-        info.tokenLimit?.let { Fact("Token limit", "$it (input + output)") }
-        Fact("System instructions", if (info.systemPromptAvailable) "supported" else "not supported")
-        Fact("Prefix caching", if (info.cachingAvailable) "supported" else "not supported")
-        Fact("AICore", info.aicoreVersion ?: "not installed")
-        info.lastWarmupMs?.let { Fact("Last warm-up", "$it ms") }
-        if (info.backend == BackendKind.Fake) {
+        if (s.anyFake) {
             Text("Fake model behaviour", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-            FakeScenario.entries.forEach { sc ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 44.dp)
-                        .selectable(selected = s.fakeScenario == sc, role = Role.RadioButton) { vm.setScenario(sc) },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    androidx.compose.material3.RadioButton(selected = s.fakeScenario == sc, onClick = null)
-                    Text(sc.label, style = MaterialTheme.typography.bodyMedium)
+            Column(Modifier.selectableGroup()) {
+                FakeScenario.entries.forEach { sc ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .selectable(selected = s.fakeScenario == sc, role = Role.RadioButton) { vm.setScenario(sc) },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        RadioButton(selected = s.fakeScenario == sc, onClick = null)
+                        Text(sc.label, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
-        }
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = vm::download, enabled = s.model == ModelState.Downloadable || s.model is ModelState.Failed) { Text("Download") }
-            FilledTonalButton(onClick = vm::warmup, enabled = s.model == ModelState.Ready) { Text("Warm up") }
-            OutlinedButton(onClick = vm::refresh) { Text("Check again") }
         }
     }
 }
 
-private fun statusText(m: ModelState): String = when (m) {
+@Composable
+private fun ModelCard(id: ModelId, state: ModelState, info: ModelInfo, vm: StatsViewModel) {
+    var confirmRemove by remember { mutableStateOf(false) }
+    val fake = info.backend == BackendKind.Fake
+    val systemManaged = id == ModelId.Nano && !fake
+    Card(id.label + if (fake) " (fake)" else "") {
+        Fact("Status", statusText(state, info))
+        Fact(
+            "Size",
+            when {
+                systemManaged -> "managed by Android (AICore)"
+                else -> listOfNotNull(
+                    info.downloadBytes?.let(::bytesText),
+                    when {
+                        state is ModelState.Downloading -> "${bytesText(state.downloadedBytes)} downloaded"
+                        state == ModelState.Ready -> "downloaded"
+                        else -> "not downloaded"
+                    },
+                ).joinToString(" · ")
+            },
+        )
+        if (!systemManaged) {
+            Fact("Backend", info.accelerator ?: if (info.loading) "loading…" else "not loaded")
+            info.loadMs?.let { Fact("Load time", String.format(Locale.US, "%.1f s", it / 1000f)) }
+            info.speculativeDecoding?.let { Fact("Speculative decoding", if (it) "on" else "off") }
+        }
+        info.tokenLimit?.let { Fact("Token limit", "$it (input + output)") }
+        info.inputTokenCap?.let { Fact("Input cap", "$it tokens") }
+        // Known once the model is ready.
+        if (state == ModelState.Ready) Fact(
+            "System instructions",
+            when {
+                info.nativeChat -> "native, with chat turns"
+                info.systemPromptAvailable -> "native, in one transcript"
+                else -> "inline, at the start of the prompt"
+            },
+        )
+        Fact("Media", mediaText(info.media))
+        if (id == ModelId.Nano) {
+            Fact("Real model check", info.realAvailability?.name ?: "no answer from AICore")
+            info.baseModelName?.let { Fact("Base model", it) }
+            Fact("Prefix caching", if (info.cachingAvailable) "supported" else "not supported")
+            Fact("AICore", info.aicoreVersion ?: "not installed")
+        } else {
+            info.baseModelName?.let { Fact("File", it) }
+        }
+        info.lastWarmupMs?.let { Fact("Last warm-up", "$it ms") }
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            when (state) {
+                ModelState.Downloadable, is ModelState.Failed -> FilledTonalButton(onClick = { vm.download(id) }) { Text("Download") }
+                is ModelState.Downloading -> if (!systemManaged) FilledTonalButton(onClick = { vm.cancel(id) }) { Text("Cancel") }
+                ModelState.Ready -> FilledTonalButton(onClick = { vm.load(id) }, enabled = !info.loading && !info.loaded) {
+                    Text(if (info.loading) "Loading…" else if (systemManaged) "Warm up" else "Load now")
+                }
+                else -> Unit
+            }
+            if (!systemManaged && state == ModelState.Ready) OutlinedButton(onClick = { confirmRemove = true }) { Text("Remove") }
+            OutlinedButton(onClick = { vm.refresh(id) }) { Text("Check again") }
+        }
+    }
+    if (confirmRemove) {
+        AlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            title = { Text("Remove ${id.label}?") },
+            text = {
+                Text(
+                    "This deletes the downloaded model" + (info.fileBytes ?: info.downloadBytes)?.let { " (${bytesText(it)})" }.orEmpty() +
+                        " and frees its memory. Chats that use it will ask to download it again.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { confirmRemove = false; vm.remove(id) },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancel") } },
+        )
+    }
+}
+
+private fun statusText(m: ModelState, info: ModelInfo): String = when (m) {
     ModelState.Checking -> "checking…"
-    ModelState.Ready -> "ready"
+    ModelState.Ready -> when {
+        info.loading -> "ready, loading into memory"
+        info.loaded -> "ready, loaded"
+        else -> "ready"
+    }
     ModelState.Downloadable -> "needs download"
-    is ModelState.Downloading -> "downloading " + (m.totalBytes?.let { "${(m.downloadedBytes * 100 / it)}%" } ?: "${m.downloadedBytes / 1_000_000} MB")
+    is ModelState.Downloading -> "downloading " + percent(m)
     ModelState.Unsupported -> "unsupported"
     is ModelState.Failed -> "failed: ${m.message}"
 }
@@ -250,13 +373,22 @@ private fun LogRow(g: Generation, agentName: String) {
                 Text(agentName, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(relativeTime(g.startedAt), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            val tps = if (g.ttftMs != null && g.outputTokens > 1 && g.totalMs > g.ttftMs) (g.outputTokens - 1) * 1000 / (g.totalMs - g.ttftMs) else null
+            val tps = g.decodeTokensPerSecond?.roundToInt()
+                ?: if (g.ttftMs != null && g.outputTokens > 1 && g.totalMs > g.ttftMs) ((g.outputTokens - 1) * 1000 / (g.totalMs - g.ttftMs)).toInt() else null
+            Text(
+                listOfNotNull(
+                    ModelId.parse(g.model)?.label,
+                    g.accelerator,
+                    if (g.backend == BackendKind.Fake.name) "fake" else null,
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall,
+            )
             Text(
                 listOfNotNull(
                     g.ttftMs?.let { "${it} ms first token" },
-                    tps?.let { "$it tok/s" },
+                    g.prefillTokensPerSecond?.let { "prefill ${it.roundToInt()} tok/s" },
+                    tps?.let { if (g.prefillTokensPerSecond != null) "decode $it tok/s" else "$it tok/s" },
                     "${g.inputTokens} in / ${g.outputTokens} out",
-                    if (g.backend == BackendKind.Fake.name) "fake" else null,
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

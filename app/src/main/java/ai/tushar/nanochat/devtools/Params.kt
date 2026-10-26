@@ -1,6 +1,7 @@
 package ai.tushar.nanochat.devtools
 
 import ai.tushar.nanochat.data.Message
+import ai.tushar.nanochat.model.ModelId
 import ai.tushar.nanochat.settings.GenerationParams
 import ai.tushar.nanochat.ui.theme.LocalChatColors
 import androidx.compose.foundation.layout.Arrangement
@@ -23,10 +24,12 @@ import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.roundToInt
 
-/** "0.41 s to first token · 32 tok/s · 128 tokens" under an agent reply. */
+/** "Gemma 4 E4B · GPU · 0.41 s to first token · 32 tok/s · 128 tokens" under an agent reply. */
 @Composable
 fun ReplyStats(message: Message, modifier: Modifier = Modifier) {
     val parts = buildList {
+        ModelId.parse(message.model)?.let { add(it.label) }
+        message.accelerator?.let { add(it) }
         message.ttftMs?.let { add(String.format(Locale.US, "%.2f s to first token", it / 1000f)) }
         message.tokensPerSecond?.let { add("${it.roundToInt()} tok/s") }
         message.outputTokens?.let { add(if (it == 1) "1 token" else "$it tokens") }
