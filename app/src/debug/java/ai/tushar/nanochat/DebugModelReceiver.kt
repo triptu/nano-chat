@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
  * adb shell am broadcast -a ai.tushar.nanochat.debug.MODEL -p ai.tushar.nanochat --es download GemmaE4B
  * adb shell am broadcast -a ai.tushar.nanochat.debug.MODEL -p ai.tushar.nanochat --es agent Basil --es model GemmaE4B
  * adb shell am broadcast -a ai.tushar.nanochat.debug.MODEL -p ai.tushar.nanochat --es clear Basil
+ * adb shell am broadcast -a ai.tushar.nanochat.debug.MODEL -p ai.tushar.nanochat --es agent Basil --es copyAs "Basil G" --es model GemmaE4B
  */
 class DebugModelReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -25,6 +26,11 @@ class DebugModelReceiver : BroadcastReceiver() {
             try {
                 val agent = graph.dao.agentPreviews().first().firstOrNull { it.agent.name == agentName }?.agent ?: return@launch
                 if (intent.hasExtra("clear")) graph.dao.clearMessages(agent.id)
+                intent.getStringExtra("copyAs")?.let { name ->
+                    val model = ModelId.parse(intent.getStringExtra("model"))?.name
+                    graph.dao.insertAgent(agent.copy(id = 0, name = name, model = model, createdAt = System.currentTimeMillis()))
+                    return@launch
+                }
                 if (intent.hasExtra("model")) graph.dao.updateAgent(agent.copy(model = ModelId.parse(intent.getStringExtra("model"))?.name))
             } finally {
                 done.finish()

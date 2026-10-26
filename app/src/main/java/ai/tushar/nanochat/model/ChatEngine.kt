@@ -3,6 +3,7 @@ package ai.tushar.nanochat.model
 import ai.tushar.nanochat.attachments.AttachmentStore
 import ai.tushar.nanochat.attachments.DraftAttachment
 import ai.tushar.nanochat.data.Agent
+import ai.tushar.nanochat.data.AttachmentKind
 import ai.tushar.nanochat.data.ChatDao
 import ai.tushar.nanochat.data.Generation
 import ai.tushar.nanochat.data.Message
@@ -137,7 +138,9 @@ class ChatEngine(
         var error: String? = null
         var hitNextTurn = false
         var stats: RunStats? = null
-        val prefix = window.instructions(plan.systemPrompt).takeIf { useCache && plan.prompt.startsWith(it) }
+        // ML Kit rejects a cached prefix on requests that carry an image.
+        val sendsImage = plan.turns.lastOrNull()?.media?.any { it.kind == AttachmentKind.Image } == true
+        val prefix = window.instructions(plan.systemPrompt).takeIf { useCache && !sendsImage && plan.prompt.startsWith(it) }
         val request = GenerateRequest(
             systemPrompt = plan.systemPrompt.takeIf { plan.useSystemInstruction },
             prompt = if (prefix != null) plan.prompt.removePrefix(prefix) else plan.prompt,
