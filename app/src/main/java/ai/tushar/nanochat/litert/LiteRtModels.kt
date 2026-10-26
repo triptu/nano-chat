@@ -11,7 +11,10 @@ data class LiteRtSpec(
     val repo: String,
     val file: String,
     val bytes: Long,
-    /** KV cache size: input plus output tokens. Bigger costs memory. */
+    /**
+     * KV cache size: input plus output tokens. Bigger costs memory: on the 12 GB Galaxy Z Fold 7, E4B with its vision and
+     * audio encoders peaks at about 5 GB at 4096 and was killed for low memory at 8192.
+     */
     val maxTokens: Int,
     val maxImages: Int,
     /** Gemma 4 vision budget per image: 70, 140, 280, 560 or 1120 tokens. */
@@ -28,7 +31,7 @@ val LiteRtCatalog: Map<ModelId, LiteRtSpec> = listOf(
         // The file Google's AI Edge Gallery uses: text decoder plus the vision and audio encoders, with MTP speculative decoding.
         file = "gemma-4-E4B-it.litertlm",
         bytes = 3_659_530_240L,
-        maxTokens = 8192,
+        maxTokens = 4096,
         maxImages = 4,
         visualTokenBudget = 280,
         audioTokensPerSecond = 25,
