@@ -103,6 +103,16 @@
 <h2>Shipped</h2>
 
 <div class="entry shipped">
+  <h3>Try again after the app is killed, and Gemma's memory freed in the background</h3>
+  <p>Release build on the Fold 7, cover screen, Gemma 4 E4B on the GPU. I sent Basil (Gemma) a message and force-stopped the app 7 s into the reply. On reopening, the message showed the same "Try again" card a failed reply gets, and the half-written reply was gone, as it is for a reply that fails partway. Try again reloaded Gemma (12.2 s, partly while the chat was open) and replied, with 5.42 s to the first token. A reply that kept streaming after I pressed Home finished and was saved. Gemma held 3.8 to 4.6 GB PSS while loaded.</p>
+  <p>Android killed the backgrounded app for low memory 39 s after Home, twice, before the first 60 s release delay ran. So the delay is now 10 s, and that build is installed but not measured. Warm-up now runs only while the app is on screen, so a process Android restarts in the background no longer loads Gemma. Coming back to an open Gemma chat loads it again.</p>
+  <div class="shots">
+    <figure><img src="shots/fold_recover_try_again.png" alt=""><figcaption>Real phone, release build. After a force-stop mid-reply: the message has no reply, and the card offers Try again.</figcaption></figure>
+    <figure><img src="shots/fold_recover_retried.png" alt=""><figcaption>Real phone. After tapping Try again: the full reply, 5.42 s to the first token.</figcaption></figure>
+  </div>
+</div>
+
+<div class="entry shipped">
   <h3>Real Gemini Nano chats on the Fold 7, unfolded</h3>
   <p>Release build, real model (<code>nano-v2</code> through ML Kit, AICore 20260917). The list is on the left and the chat on the right. Replies stream into the bubble after the mascot's thinking dots. Each reply's first token arrived in 1.2 to 1.8 s, and replies streamed at 16 to 30 tokens per second. Multi-turn works: each request carries the earlier turns. The phone was in dark mode and I left its theme alone.</p>
   <div class="shots wide">
@@ -187,7 +197,9 @@
 <div class="entry decision"><h3>Nano gets photos too, but not voice notes</h3><p>ML Kit's Prompt API takes one image per request, and it worked on the Fold. So Nano companions get the attach button with Photo and Camera, and no Voice note. One fix was needed: ML Kit rejects a cached prompt prefix on requests with an image, so those requests skip the cache.</p></div>
 <div class="entry decision"><h3>How photos are stored</h3><p>Photos and voice notes are saved in the app's private storage, never in shared storage, and listed in a new database table, so existing chats survived the upgrade. Each photo is saved twice: a full-size copy for the chat and a 768 px PNG for the model. Clearing a chat or deleting a companion also deletes its files. Tap a photo to view it full screen.</p></div>
 <div class="entry decision"><h3>The download screen moved into the chat</h3><p>The whole app used to wait behind Nano's gate. Now the list always shows, and a chat whose model isn't ready shows the mascot download screen in its place, with size, progress and cancel. It also has a link to switch that companion to the other model.</p></div>
-<div class="entry decision"><h3>Global default stays Gemini Nano</h3><p>New companions use Nano unless you pick Gemma, so nobody has to download 3.66 GB before their first chat. You can change the default on the nerds page.</p></div>
+<div class="entry decision"><h3>Global default stays Gemini Nano, switchable on the profile page</h3><p>New companions and the three starters use "Default", which is Nano, because Gemma heats the phone and needs a 3.66 GB download. The profile page has a Default model switch (Gemini Nano or Gemma 4 E4B), shown even with dev tools off. It's the same setting the nerds page used to have, so I removed the nerds page copy. Companions set to Gemma by hand stay on Gemma, and nobody was migrated.</p></div>
+<div class="entry decision"><h3>Gemma is freed 10 s after the app leaves the screen</h3><p>While the app is in the background and no reply is running or loading, the Gemma engine is closed. The next Gemma message, or reopening a Gemma chat, loads it again (about 9 to 12 s). A reply in progress is never cut off: the release waits and retries every 10 s. I picked 10 s because Android killed the app 39 s after going home. It's one number in <code>NanoChatApp.kt</code>. Flip it if you'd rather keep Gemma warm longer.</p></div>
+<div class="entry decision"><h3>Unanswered messages get "Try again" on the next start</h3><p>On start, any chat whose last message is yours gets the same "Try again" card as a reply that failed, worded "didn't get to answer before the app closed". This also covers a reply you stopped before any text arrived.</p></div>
 
 <h2>Open questions</h2>
 <div class="entry question">
@@ -210,7 +222,7 @@
 </div>
 
 <h2>Known issues</h2>
-<div class="entry issue"><h3>Android can kill the app while Gemma is loaded</h3><p>Gemma takes 4 to 5 GB, which leaves about 1 GB free on the Fold. Twice during testing, with a larger window and other apps open, Android's low-memory killer stopped Nano Chat in the middle of a reply. When that happens, your message stays in the chat without a reply, and you have to send it again (there's no "Try again" on the next start). The app then reloads the model, which takes about 10 seconds, and rebuilds the chat (4.6 s to the first token in the release test, because two old photos were read again).</p></div>
+<div class="entry issue"><h3>Android can still kill the app while Gemma is loaded</h3><p>Gemma takes 3.8 to 4.6 GB. With it loaded and the app in the background, Android killed Nano Chat 39 s after Home, twice. Your message now gets "Try again" on the next start, and opening the chat reloads Gemma (9 to 12 s). Not yet measured: whether the 10 s release frees the memory in time (PSS before and after), and the 4,096 and 3,072-token windows with other apps open. Those are the next things to test.</p></div>
 <div class="entry issue"><h3>Downloads run only while the app is open</h3><p>The 3.66 GB download runs inside the app, not as a background job. If Android closes the app, the download stops. It resumes from where it stopped the next time you tap Download.</p></div>
 <div class="entry issue"><h3>Not measured</h3><p>The token cost of voice notes is estimated at 25 tokens per second; I didn't measure it. TalkBack, large fonts, the unfolded inner screen with Gemma, and a voice note recorded on the real mic were not checked. The test note was made with macOS text to speech and sent through the debug receiver, and recording was checked only on the emulator.</p></div>
 <div class="entry issue"><h3>Nano reply quality</h3><p>See open question 3. One reply also started with a stray "1.".</p></div>
