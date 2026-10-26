@@ -2,6 +2,7 @@ package ai.tushar.nanochat.profile
 
 import ai.tushar.nanochat.AppGraph
 import ai.tushar.nanochat.home.ProfileBadge
+import ai.tushar.nanochat.model.ModelId
 import ai.tushar.nanochat.ui.Ico
 import ai.tushar.nanochat.ui.Icons
 import androidx.compose.foundation.clickable
@@ -23,6 +24,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -62,6 +66,9 @@ class ProfileViewModel(private val graph: AppGraph) : ViewModel() {
         viewModelScope.launch { graph.settings.setDisplayName(name.trim()) }
     }
 
+    val defaultModel = graph.settings.defaultModel.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ModelId.Default)
+    fun setDefaultModel(m: ModelId) = viewModelScope.launch { graph.settings.setDefaultModel(m) }
+
     fun setDevTools(on: Boolean) = viewModelScope.launch { graph.settings.setDevToolsEnabled(on) }
 }
 
@@ -69,6 +76,7 @@ class ProfileViewModel(private val graph: AppGraph) : ViewModel() {
 @Composable
 fun ProfileScreen(vm: ProfileViewModel, onBack: () -> Unit, onOpenStats: () -> Unit) {
     val devTools by vm.devTools.collectAsStateWithLifecycle()
+    val defaultModel by vm.defaultModel.collectAsStateWithLifecycle()
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -99,6 +107,27 @@ fun ProfileScreen(vm: ProfileViewModel, onBack: () -> Unit, onOpenStats: () -> U
                 modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
             )
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerLowest, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column {
+                        Text("Default model", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Friends set to Default talk through this one. Gemma is smarter but needs a 3.66 GB download and warms the phone.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        ModelId.entries.forEachIndexed { i, m ->
+                            SegmentedButton(
+                                selected = defaultModel == m,
+                                onClick = { vm.setDefaultModel(m) },
+                                shape = SegmentedButtonDefaults.itemShape(i, ModelId.entries.size),
+                            ) { Text(m.label, maxLines = 1) }
+                        }
+                    }
+                }
+            }
             Surface(color = MaterialTheme.colorScheme.surfaceContainerLowest, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
                 Column {
                     Row(

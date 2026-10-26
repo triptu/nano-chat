@@ -112,7 +112,6 @@ class StatsViewModel(private val graph: AppGraph) : ViewModel() {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsState())
 
     fun setDefaults(p: GenerationParams) = viewModelScope.launch { graph.settings.setDefaultParams(p) }
-    fun setDefaultModel(m: ModelId) = viewModelScope.launch { graph.settings.setDefaultModel(m) }
     fun setBackend(c: BackendChoice) = viewModelScope.launch { graph.settings.setBackendChoice(c) }
     fun setScenario(s: FakeScenario) = viewModelScope.launch { graph.settings.setFakeScenario(s) }
     fun download(id: ModelId) = graph.models.download(id)
@@ -142,7 +141,6 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { DefaultModelCard(s, vm) }
             item { RealOrFakeCard(s, vm) }
             items(ModelId.entries, key = { it.name }) { id -> ModelCard(id, s.states.getValue(id), s.infos.getValue(id), vm) }
             item {
@@ -174,27 +172,6 @@ private fun Card(title: String, content: @Composable () -> Unit) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             content()
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DefaultModelCard(s: StatsState, vm: StatsViewModel) {
-    Card("Default model") {
-        Text(
-            "Companions use this unless they pick their own model in their edit sheet.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            ModelId.entries.forEachIndexed { i, m ->
-                SegmentedButton(
-                    selected = s.defaultModel == m,
-                    onClick = { vm.setDefaultModel(m) },
-                    shape = SegmentedButtonDefaults.itemShape(i, ModelId.entries.size),
-                ) { Text(m.label, maxLines = 1) }
-            }
         }
     }
 }
