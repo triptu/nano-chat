@@ -5,6 +5,15 @@ import ai.tushar.nanochat.data.Agent
 import ai.tushar.nanochat.data.AgentColor
 import ai.tushar.nanochat.devtools.AgentParamsSection
 import ai.tushar.nanochat.devtools.DevOnly
+import ai.tushar.nanochat.devtools.modelStatusLine
+import ai.tushar.nanochat.model.ModelId
+import ai.tushar.nanochat.model.ModelInfo
+import ai.tushar.nanochat.model.ModelState
+import ai.tushar.nanochat.ui.theme.LocalChatColors
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.draw.clip
 import ai.tushar.nanochat.settings.GenerationParams
 import ai.tushar.nanochat.ui.Ico
 import ai.tushar.nanochat.ui.Icons
@@ -65,13 +74,18 @@ data class AgentDraft(
     val temperature: Float? = null,
     val topK: Int? = null,
     val maxOutputTokens: Int? = null,
+    /** Null means "use the default model". */
+    val model: ModelId? = null,
 ) {
     val canSave: Boolean get() = name.isNotBlank() && personality.isNotBlank()
 
     companion object {
-        fun of(a: Agent) = AgentDraft(a.name, a.color, a.personality, a.temperature, a.topK, a.maxOutputTokens)
+        fun of(a: Agent) = AgentDraft(a.name, a.color, a.personality, a.temperature, a.topK, a.maxOutputTokens, ModelId.parse(a.model))
     }
 }
+
+/** A model the editor can offer, with how ready it is (shown only with dev tools on). */
+data class ModelChoice(val id: ModelId, val state: ModelState, val info: ModelInfo)
 
 class AgentsViewModel(private val graph: AppGraph) : ViewModel() {
     fun create(d: AgentDraft, then: (Long) -> Unit) = viewModelScope.launch {
@@ -79,7 +93,7 @@ class AgentsViewModel(private val graph: AppGraph) : ViewModel() {
             Agent(
                 name = d.name.trim(), color = d.color, personality = d.personality.trim(),
                 temperature = d.temperature, topK = d.topK, maxOutputTokens = d.maxOutputTokens,
-                createdAt = System.currentTimeMillis(),
+                createdAt = System.currentTimeMillis(), model = d.model?.name,
             ),
         )
         then(id)
@@ -90,18 +104,22 @@ class AgentsViewModel(private val graph: AppGraph) : ViewModel() {
             agent.copy(
                 name = d.name.trim(), color = d.color, personality = d.personality.trim(),
                 temperature = d.temperature, topK = d.topK, maxOutputTokens = d.maxOutputTokens,
+                model = d.model?.name,
             ),
         )
     }
 
     fun delete(agentId: Long) = viewModelScope.launch {
         graph.engine.stop(agentId)
+        graph.drafts.take(agentId).forEach(graph.attachments::discard)
         graph.dao.deleteAgent(agentId)
+        graph.cleanUpAttachments()
     }
 
     fun clearChat(agentId: Long) = viewModelScope.launch {
         graph.engine.stop(agentId)
         graph.dao.clearMessages(agentId)
+        graph.cleanUpAttachments()
     }
 }
 
@@ -110,6 +128,8 @@ class AgentsViewModel(private val graph: AppGraph) : ViewModel() {
 fun AgentEditorSheet(
     initial: AgentDraft?,
     defaults: GenerationParams,
+    defaultModel: ModelId,
+    models: List<ModelChoice>,
     onDismiss: () -> Unit,
     onSave: (AgentDraft) -> Unit,
 ) {
@@ -182,6 +202,7 @@ fun AgentEditorSheet(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                 shape = MaterialTheme.shapes.medium,
             )
+            ModelPicker(draft.model, defaultModel, models) { draft = draft.copy(model = it) }
             DevOnly {
                 AgentParamsSection(
                     temperature = draft.temperature,
@@ -197,6 +218,45 @@ fun AgentEditorSheet(
                     onClick = { scope.launch { sheet.hide(); onSave(draft); onDismiss() } },
                     enabled = draft.canSave,
                 ) { Text(if (isNew) "Start chatting" else "Save") }
+            }
+        }
+    }
+}
+
+/** Which model the companion talks through. A core choice, so it shows with dev tools off; readiness detail is dev-only. */
+@Composable
+private fun ModelPicker(selected: ModelId?, defaultModel: ModelId, models: List<ModelChoice>, onSelect: (ModelId?) -> Unit) {
+    Column(Modifier.selectableGroup()) {
+        Text("Model", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp))
+        ModelRow(selected == null, "Default (${defaultModel.label})", "Follows the app's default model.", null) { onSelect(null) }
+        models.forEach { m -> ModelRow(selected == m.id, m.id.label, m.id.blurb, m) { onSelect(m.id) } }
+    }
+}
+
+@Composable
+private fun ModelRow(selected: Boolean, title: String, subtitle: String, choice: ModelChoice?, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(start = 4.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        RadioButton(selected = selected, onClick = null, modifier = Modifier.size(40.dp))
+        Column(Modifier.padding(top = 9.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (choice != null) {
+                DevOnly {
+                    Text(
+                        modelStatusLine(choice.id, choice.state, choice.info),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = LocalChatColors.current.faint,
+                        modifier = Modifier.padding(top = 2.dp),
+                    )
+                }
             }
         }
     }
