@@ -14,10 +14,21 @@ import ai.tushar.nanochat.model.Models
 import ai.tushar.nanochat.settings.Settings
 import android.app.Application
 import android.content.Context
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/**
+ * How long the app sits in the background before Gemma's memory is freed. With 4 to 5 GB held, Android's low-memory
+ * killer picks this app first once it's in the background: on the Fold it was killed 39 s after going home.
+ */
+private const val ReleaseAfterBackgroundMs = 10_000L
 
 /** App-wide objects. Built once in [NanoChatApp] and reached from screens through [Context.graph]. */
 class AppGraph(context: Context) {
@@ -53,8 +64,25 @@ class NanoChatApp : Application() {
             if (graph.dao.agentCount() == 0) graph.dao.insertAgents(starterAgents(System.currentTimeMillis()))
             // Drafts live in memory, so files from drafts left behind when the app last closed are unreferenced now.
             graph.cleanUpAttachments()
+            graph.engine.recoverUnanswered()
         }
         graph.models.start()
+        ProcessLifecycleOwner.get().lifecycle.addObserver(BackgroundRelease(graph))
+    }
+}
+
+/** Frees the heavy model while the app is in the background, waiting for any reply in progress to finish first. */
+private class BackgroundRelease(private val graph: AppGraph) : DefaultLifecycleObserver {
+    private var release: Job? = null
+
+    override fun onStop(owner: LifecycleOwner) {
+        release = graph.scope.launch {
+            do delay(ReleaseAfterBackgroundMs) while (!graph.models.releaseIfIdle())
+        }
+    }
+
+    override fun onStart(owner: LifecycleOwner) {
+        release?.cancel()
     }
 }
 

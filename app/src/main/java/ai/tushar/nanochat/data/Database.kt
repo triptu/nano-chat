@@ -176,6 +176,18 @@ interface ChatDao {
     @Query("SELECT * FROM messages WHERE agentId = :agentId ORDER BY createdAt DESC, id DESC LIMIT :limit")
     suspend fun recentMessages(agentId: Long, limit: Int): List<Message>
 
+    /** Companions whose newest message is the user's, so it has no reply yet. */
+    @Query(
+        """
+        SELECT a.* FROM agents a
+        JOIN messages m ON m.id = (
+            SELECT id FROM messages WHERE agentId = a.id ORDER BY createdAt DESC, id DESC LIMIT 1
+        )
+        WHERE m.role = 'User'
+        """,
+    )
+    suspend fun agentsAwaitingReply(): List<Agent>
+
     @Insert suspend fun insertMessage(message: Message): Long
     @Insert suspend fun insertMessages(messages: List<Message>)
 

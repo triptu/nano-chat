@@ -101,9 +101,11 @@ class LiteRtBackend(context: Context, private val spec: LiteRtSpec) : ModelBacke
 
     override suspend fun unload() = lock.withLock {
         closeConversation()
-        runCatching { engine?.close() }
+        val e = engine ?: return@withLock
+        runCatching { e.close() }
         engine = null
         accelerator = null
+        Log.i(Tag, "Unloaded ${spec.file}")
     }
 
     override suspend fun tokenLimit(): Int = spec.maxTokens

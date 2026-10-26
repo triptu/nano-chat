@@ -72,13 +72,22 @@ class ChatEngine(
 
     fun retry(agentId: Long): Job? = if (agentId in jobs) null else start(agentId) {}
 
+    /**
+     * Run once at app start. A chat whose last message is the user's lost its reply when the app was closed or killed,
+     * so it gets the same "Try again" as a reply that failed partway. A partial reply was never saved, so it's dropped.
+     */
+    suspend fun recoverUnanswered() {
+        for (agent in dao.agentsAwaitingReply()) {
+            val p = ReplyProblem("${agent.name} didn't get to answer before the app closed. Try again?", canRetry = true)
+            synchronized(jobs) { if (agent.id !in jobs) problem(agent.id, p) }
+        }
+    }
+
     fun stop(agentId: Long) {
         jobs[agentId]?.cancel()
     }
 
     private fun start(agentId: Long, before: suspend () -> Unit): Job {
-        _problems.update { it - agentId }
-        _pending.update { it + (agentId to PendingReply("")) }
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 before()
@@ -89,6 +98,8 @@ class ChatEngine(
             }
         }
         synchronized(jobs) { jobs[agentId] = job }
+        _problems.update { it - agentId }
+        _pending.update { it + (agentId to PendingReply("")) }
         job.start()
         return job
     }

@@ -21,6 +21,8 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -97,9 +99,12 @@ class ChatViewModel(private val graph: AppGraph, val agentId: Long) : ViewModel(
     val modelInfos: StateFlow<Map<ModelId, ModelInfo>> = graph.models.infos
 
     init {
-        // Load the chat's model as soon as it's usable, so the first reply doesn't wait for it.
+        // Load the chat's model as soon as it's usable and the app is on screen, so the first reply doesn't wait for it.
+        // Coming back to the app loads it again if it was freed in the background.
+        val onScreen = ProcessLifecycleOwner.get().lifecycle.currentStateFlow.map { it.isAtLeast(Lifecycle.State.STARTED) }
         viewModelScope.launch {
-            model.map { it.id.takeIf { _ -> it.ready } }.distinctUntilChanged().filterNotNull().collect { graph.models.warm(it) }
+            combine(model, onScreen) { m, shown -> m.id.takeIf { m.ready && shown } }
+                .distinctUntilChanged().filterNotNull().collect { graph.models.warm(it) }
         }
     }
 

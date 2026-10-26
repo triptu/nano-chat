@@ -181,7 +181,7 @@ class Models(
     suspend fun <T> use(id: ModelId, block: suspend (ModelBackend) -> T): T = engineLock.withLock {
         val b = backend(id)
         if (b.heavy && loadedHeavy !== b) {
-            loadedHeavy?.let { old -> old.unload(); ModelId.entries.filter { backend(it) === old }.forEach { m -> setInfo(m) { i -> i.copy(loaded = false) } } }
+            unloadHeavy()
             loadedHeavy = b
         }
         try {
@@ -189,6 +189,28 @@ class Models(
         } finally {
             refreshDetails(id, b)
         }
+    }
+
+    /**
+     * Frees the heavy engine's memory if no model is answering or loading right now. Returns false when one is,
+     * so the caller can try again later. The next message loads the engine again.
+     */
+    suspend fun releaseIfIdle(): Boolean {
+        if (!engineLock.tryLock()) return false
+        try {
+            unloadHeavy()
+        } finally {
+            engineLock.unlock()
+        }
+        return true
+    }
+
+    /** Runs under [engineLock]. */
+    private suspend fun unloadHeavy() {
+        val old = loadedHeavy ?: return
+        old.unload()
+        loadedHeavy = null
+        ModelId.entries.filter { backend(it) === old }.forEach { m -> setInfo(m) { i -> i.copy(loaded = false) } }
     }
 
     private suspend fun warmup(id: ModelId, b: ModelBackend) {
