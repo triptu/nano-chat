@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nano Chat progress</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #FFF7EE; --card: #FFFFFF; --text: #2B211C; --muted: #6B5A50; --line: #EADBCB;
+    --shipped: #3E9B6B; --decision: #D9583A; --question: #B8862A; --issue: #C4524B;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1E1814; --card: #2A221D; --text: #F4EAE1; --muted: #C9B8AC; --line: #3D332C;
+      --shipped: #6CC496; --decision: #FF9C80; --question: #E3B95A; --issue: #F07C74; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.55 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 30px; margin: 0 0 6px; }
+  .sub { color: var(--muted); margin: 0 0 8px; }
+  h2 { font-size: 20px; margin: 40px 0 12px; }
+  .entry { background: var(--card); border-left: 4px solid var(--line); padding: 14px 18px; margin: 0 0 10px; }
+  .entry h3 { margin: 0 0 4px; font-size: 16px; }
+  .entry p, .entry li { margin: 4px 0; color: var(--muted); }
+  .entry ul { margin: 6px 0; padding-left: 20px; }
+  .shipped { border-left-color: var(--shipped); }
+  .decision { border-left-color: var(--decision); }
+  .question { border-left-color: var(--question); }
+  .issue { border-left-color: var(--issue); }
+  .shots { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+  .shots figure { margin: 0; width: 190px; }
+  .shots.wide figure { width: 420px; }
+  .shots img { width: 100%; display: block; border: 1px solid var(--line); }
+  .shots figcaption { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  code { font-size: 14px; }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 14px; margin: 14px 0 0; }
+  .legend span::before { content: ""; display: inline-block; width: 4px; height: 14px; margin-right: 6px; vertical-align: -2px; background: var(--c); }
+</style>
+</head>
+<body>
+<main>
+<h1>Nano Chat</h1>
+<p class="sub">An Android chat app that talks to Gemini Nano on the phone, with a list of companions like WhatsApp contacts. The release build from commit <code>67ae724</code> and later is installed on the Galaxy Z Fold 7 and was tested there with the real model. You don't need to do anything unless you want to answer the open questions at the bottom.</p>
+<div class="legend">
+  <span style="--c: var(--shipped)">Shipped</span>
+  <span style="--c: var(--decision)">Decision (flip it if you want)</span>
+  <span style="--c: var(--question)">Open question</span>
+  <span style="--c: var(--issue)">Known issue</span>
+</div>
+
+<h2>Shipped</h2>
+
+<div class="entry shipped">
+  <h3>Real Gemini Nano chats on the Fold 7, unfolded</h3>
+  <p>Release build, real model (<code>nano-v2</code> through ML Kit, AICore 20260917). The list is on the left and the chat on the right. Replies stream into the bubble after the mascot's thinking dots. Each reply's first token arrived in 1.2 to 1.8 s, and replies streamed at 16 to 30 tokens per second. Multi-turn works: each request carries the earlier turns. The phone was in dark mode and I left its theme alone.</p>
+  <div class="shots wide">
+    <figure><img src="shots/fold_release_chat.png" alt=""><figcaption>Real phone, release build. A typed message to Sunny and her real reply.</figcaption></figure>
+    <figure><img src="shots/fold_basil.png" alt=""><figcaption>Real phone. Three real turns with Basil, with the dev stats line under each reply.</figcaption></figure>
+    <figure><img src="shots/fold_internals.png" alt=""><figcaption>Real phone. Chat internals: the exact prompt, 278 of 3992 input tokens, 5 turns included and none dropped.</figcaption></figure>
+    <figure><img src="shots/fold_release_stats.png" alt=""><figcaption>Real phone. The nerds page confirms the real backend: nano-v2, 8192 token limit, no system instructions, prefix caching supported.</figcaption></figure>
+  </div>
+</div>
+
+<div class="entry shipped">
+  <h3>Cover-screen layout, light and dark</h3>
+  <p>Pixel 9 Pro Fold emulator, folded (1080 x 2424), fake model, dev tools on. The real Fold stayed unfolded the whole time, so its cover screen was only checked on the emulator.</p>
+  <div class="shots">
+    <figure><img src="shots/cover_light_home.png" alt=""><figcaption>Home: companions with last-message previews.</figcaption></figure>
+    <figure><img src="shots/cover_light_chat.png" alt=""><figcaption>Chat with Nano.</figcaption></figure>
+    <figure><img src="shots/cover_light_internals.png" alt=""><figcaption>Chat internals sheet (dev tools).</figcaption></figure>
+    <figure><img src="shots/cover_light_editor.png" alt=""><figcaption>Edit companion sheet.</figcaption></figure>
+    <figure><img src="shots/cover_light_stats.png" alt=""><figcaption>Stats &amp; settings for nerds.</figcaption></figure>
+    <figure><img src="shots/cover_dark_home.png" alt=""><figcaption>Home, dark.</figcaption></figure>
+    <figure><img src="shots/cover_dark_chat.png" alt=""><figcaption>Chat, dark.</figcaption></figure>
+  </div>
+</div>
+
+<div class="entry shipped">
+  <h3>Unfolded two-pane layout, and dev tools switched off</h3>
+  <p>Emulator, unfolded (2076 x 2152). With "Developer tools" off on the profile page, the stats line, the info button, the nerds page and the per-chat model settings all disappear.</p>
+  <div class="shots wide">
+    <figure><img src="shots/open_light_chat.png" alt=""><figcaption>Two-pane, light.</figcaption></figure>
+    <figure><img src="shots/open_dark_basil.png" alt=""><figcaption>Two-pane, dark, dev tools on.</figcaption></figure>
+    <figure><img src="shots/open_dark_profile_off.png" alt=""><figcaption>Profile with dev tools off: the nerds row is gone.</figcaption></figure>
+    <figure><img src="shots/open_dark_chat_devoff.png" alt=""><figcaption>Chat with dev tools off: no stats line and no info button.</figcaption></figure>
+  </div>
+</div>
+
+<div class="entry shipped">
+  <h3>Model download, unsupported phone, and the thinking state</h3>
+  <p>Download screens use the fake model's "Needs a download" scenario. The unsupported screen is the release build on the emulator, which has no Gemini Nano. On the real Fold, the app found AICore already downloading, attached to the progress, and was ready a few seconds later.</p>
+  <div class="shots">
+    <figure><img src="shots/gate_download.png" alt=""><figcaption>Download needed.</figcaption></figure>
+    <figure><img src="shots/gate_progress.png" alt=""><figcaption>Download progress.</figcaption></figure>
+    <figure><img src="shots/rel_gate.png" alt=""><figcaption>Unsupported phone. The fake-model button shows only with dev tools on.</figcaption></figure>
+  </div>
+  <div class="shots wide">
+    <figure><img src="shots/m1.png" alt=""><figcaption>Early build on the phone emulator: thinking dots, then streaming text, then the finished reply with stats.</figcaption></figure>
+  </div>
+</div>
+
+<div class="entry shipped">
+  <h3>Under the hood</h3>
+  <ul>
+    <li>Kotlin, Compose BOM 2026.09.00, Material 3 1.4.0, M3 adaptive 1.3.0, AGP 9.4.1, Kotlin 2.4.21, Gradle 9.8.2, Room 3.0.3, DataStore 1.3.0, genai-prompt 1.0.0-beta4. Each version is the latest stable on Maven as of today.</li>
+    <li>The model sits behind one interface with two backends. One is ML Kit. The other is a fake that streams canned replies at realistic speed and can pretend to need a download, be busy, run out of quota or be unsupported.</li>
+    <li>Six behavioural tests run on the fake: the prompt fits the token budget, the system prompt goes inline when needed, an oversized message is rejected, streaming and the output cap work, a quota error is raised, and a made-up next turn is trimmed. All pass.</li>
+    <li>An upgrade over an existing install keeps chats: the database moved from version 1 to 2 on the phone without losing data.</li>
+  </ul>
+</div>
+
+<h2>Decisions</h2>
+
+<div class="entry decision"><h3>Home is a list of companions, created with "New friend"</h3><p>Chose a WhatsApp-style list, where each companion is one ongoing thread. The button and sheet say "New friend". Flip it if you want another word (for example "New companion").</p></div>
+<div class="entry decision"><h3>Three starter companions</h3><p>Chose Nano (coral, general helper), Basil (sage, cooking buddy) and Sunny (apricot, pep talks). Edit, clear chat and delete are in the chat's overflow menu. Clear and delete ask for confirmation because they can't be undone.</p></div>
+<div class="entry decision"><h3>Warm look</h3><p>Chose a cream background, coral user bubbles with dark text, white agent bubbles, and a warm brown dark theme. The type is Nunito (bundled, OFL) and the icons are Phosphor, converted to vector drawables. The blob mascot is the adaptive app icon and every avatar, tinted with the companion's colour. From Meta's Muse I took two ideas: a status line under the avatar ("thinking…", "typing…", "on your phone"), and the mascot standing in for a spinner. I left out split bubbles and emoji reactions.</p></div>
+<div class="entry decision"><h3>Developer tools on by default, behind one switch</h3><p>Chose one DataStore boolean, read once at the root and passed down. Every dev surface lives in the <code>devtools/</code> folder. Switching it off also forces the model choice back to Auto.</p></div>
+<div class="entry decision"><h3>Real or fake model</h3><p>Chose Auto, Real and Fake options on the nerds page. In a release build, Auto always means the real model. In a debug build, Auto uses the fake only when the real model reports unavailable, as on an emulator. The nerds page and the chat internals sheet both show which model is running.</p></div>
+<div class="entry decision"><h3>How the prompt is built</h3><p>The Prompt API has no multi-turn support, so each request is a transcript with <code>##</code> section headers. It starts from the newest message and adds older turns while they fit, within 4000 tokens or the model limit minus the output cap, whichever is smaller. The personality goes in as a system instruction when the model supports one. Otherwise it starts the prompt as a cached prefix, which is the case on the Fold's nano-v2. I added a short length guide to every personality ("2 to 5 friendly, specific sentences").</p></div>
+<div class="entry decision"><h3>Replies keep running when you leave a chat</h3><p>Chose an app-wide engine that runs one reply at a time, so the home row shows "typing…". If you press stop, the partial reply is kept. If the model fails partway, the partial reply is dropped, as the ML Kit docs recommend, and a friendly message with "Try again" appears.</p></div>
+<div class="entry decision"><h3>Default model settings</h3><p>Chose temperature 0.7, top K 40 and 512 max output tokens. You can change them on the nerds page, and each companion can override them in its edit sheet when dev tools are on.</p></div>
+<div class="entry decision"><h3>Room 3 instead of Room 2</h3><p>Chose Room 3.0.3, the newest stable version, with the bundled SQLite driver.</p></div>
+<div class="entry decision"><h3>Two panes from 600 dp wide</h3><p>Chose a 380 dp list pane, with the chat, profile and nerds page opening in the right pane. Opening another chat replaces the current one instead of stacking it, so back goes straight to the list.</p></div>
+<div class="entry decision"><h3>Emulator for UI work, the Fold only at the end</h3><p>All UI iteration ran on a Pixel 9 Pro Fold emulator I created, folded and unfolded. I left the shared phone emulator alone after another app came up on it. Debug builds include a broadcast receiver that sends a message without the keyboard, for scripted screenshots. It isn't in release builds.</p></div>
+<div class="entry decision"><h3>Package and release signing</h3><p>The package is <code>ai.tushar.nanochat</code> with minSdk 31. The release build is minified and signed with the debug key. ML Kit needed R8 keep rules, because its beta crashes on launch without them.</p></div>
+
+<h2>Open questions</h2>
+<div class="entry question">
+  <h3>1. How hard to push reply quality on nano-v2</h3>
+  <p>The Fold 7 runs nano-v2. Its replies are short, sometimes wrong (it suggested a roux for a frittata), and it drifts back to old topics: when told "that's all I needed", Basil replied with a full recipe. Options:</p>
+  <ul>
+    <li>(a) Lower the default temperature to about 0.4.</li>
+    <li>(b) Add one example exchange to each starter personality.</li>
+    <li>(c) Send fewer old turns.</li>
+  </ul>
+  <p>My pick is (a) and (b) together, then compare on the phone. Nothing is blocked meanwhile.</p>
+</div>
+
+<h2>Known issues</h2>
+<div class="entry issue"><h3>Model quality</h3><p>See open question 1. One reply also started with a stray "1.".</p></div>
+<div class="entry issue"><h3>Not checked on the real phone</h3><p>The cover screen (the phone stayed unfolded) and light mode (the phone was in dark mode).</p></div>
+<div class="entry issue"><h3>Not checked anywhere</h3><p>A full TalkBack walk, 200% font size, and a 320 dp width. The review fixes for these are in: speaker labels on bubbles, live regions, labelled switches and sliders, and wrapping colour swatches.</p></div>
+<div class="entry issue"><h3>Prefix caching showed no speed gain</h3><p>The first token took 1.2 to 1.5 s with or without the cached prefix, but the prompts were short (100 to 280 tokens). It may matter in long chats.</p></div>
+<div class="entry issue"><h3>Small UI rough edges</h3><p>A back press during a pane transition can be ignored. Opening a chat shows one frame with an empty title while the companion loads.</p></div>
+<div class="entry issue"><h3>English only</h3><p>UI text is written in code, not in <code>strings.xml</code>, so it can't be translated yet.</p></div>
+</main>
+</body>
+</html>
