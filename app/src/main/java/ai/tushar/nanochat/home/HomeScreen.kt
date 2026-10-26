@@ -78,7 +78,8 @@ class HomeViewModel(graph: AppGraph) : ViewModel() {
             rows = previews.map { p ->
                 AgentRow(
                     agent = p.agent,
-                    preview = p.lastText,
+                    // A media-only message has no text; the preview query only knows that much.
+                    preview = p.lastText?.ifBlank { "Photo or voice note" },
                     previewIsMine = p.lastRole == Role.User,
                     typing = p.agent.id in pending,
                     lastAt = p.lastAt,

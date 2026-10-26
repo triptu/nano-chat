@@ -3,6 +3,7 @@ package ai.tushar.nanochat
 import ai.tushar.nanochat.data.ChatDatabase
 import ai.tushar.nanochat.data.starterAgents
 import ai.tushar.nanochat.attachments.AttachmentStore
+import ai.tushar.nanochat.chat.ComposerDrafts
 import ai.tushar.nanochat.litert.LiteRtBackend
 import ai.tushar.nanochat.litert.LiteRtCatalog
 import ai.tushar.nanochat.model.ChatEngine
@@ -35,6 +36,10 @@ class AppGraph(context: Context) {
         scope = scope,
     )
     val engine = ChatEngine(dao, models, settings, attachments, scope)
+    val drafts = ComposerDrafts()
+
+    /** Deletes photo and voice note files that no message or draft needs any more. */
+    suspend fun cleanUpAttachments() = attachments.deleteUnreferenced(dao.attachmentFiles().toSet(), keep = drafts.files())
 }
 
 class NanoChatApp : Application() {
@@ -46,6 +51,8 @@ class NanoChatApp : Application() {
         graph = AppGraph(this)
         graph.scope.launch {
             if (graph.dao.agentCount() == 0) graph.dao.insertAgents(starterAgents(System.currentTimeMillis()))
+            // Drafts live in memory, so files from drafts left behind when the app last closed are unreferenced now.
+            graph.cleanUpAttachments()
         }
         graph.models.start()
     }

@@ -134,7 +134,7 @@ fun ProfileScreen(vm: ProfileViewModel, onBack: () -> Unit, onOpenStats: () -> U
                 }
             }
             Text(
-                "Chats run on Gemini Nano, right on this phone. Nothing you write leaves it.",
+                "Chats run on AI models right on this phone. Nothing you write leaves it.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

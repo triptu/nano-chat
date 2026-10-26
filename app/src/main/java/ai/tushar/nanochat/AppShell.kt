@@ -3,6 +3,8 @@ package ai.tushar.nanochat
 import ai.tushar.nanochat.agents.AgentDraft
 import ai.tushar.nanochat.agents.AgentEditorSheet
 import ai.tushar.nanochat.agents.AgentsViewModel
+import ai.tushar.nanochat.agents.ModelChoice
+import ai.tushar.nanochat.model.ModelId
 import ai.tushar.nanochat.chat.AgentActions
 import ai.tushar.nanochat.chat.ChatScreen
 import ai.tushar.nanochat.chat.ChatViewModel
@@ -10,21 +12,13 @@ import ai.tushar.nanochat.data.Agent
 import ai.tushar.nanochat.devtools.LocalDevTools
 import ai.tushar.nanochat.devtools.StatsScreen
 import ai.tushar.nanochat.devtools.StatsViewModel
-import ai.tushar.nanochat.gate.ModelGate
 import ai.tushar.nanochat.home.HomeScreen
 import ai.tushar.nanochat.home.HomeViewModel
-import ai.tushar.nanochat.model.ModelState
 import ai.tushar.nanochat.profile.ProfileScreen
 import ai.tushar.nanochat.profile.ProfileViewModel
-import ai.tushar.nanochat.settings.BackendChoice
 import ai.tushar.nanochat.settings.GenerationParams
 import ai.tushar.nanochat.ui.graphViewModel
 import ai.tushar.nanochat.ui.mascot.Blob
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -93,27 +87,8 @@ private sealed interface Editing {
 fun AppRoot() {
     val graph = LocalContext.current.graph
     val devTools by graph.settings.devToolsEnabled.collectAsStateWithLifecycle(initialValue = true)
-    val model by graph.models.state(ai.tushar.nanochat.model.ModelId.Nano).collectAsStateWithLifecycle(ModelState.Checking)
-    val scope = rememberCoroutineScope()
-
-    CompositionLocalProvider(LocalDevTools provides devTools) {
-        AnimatedContent(
-            targetState = model == ModelState.Ready,
-            transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
-            label = "gate",
-        ) { ready ->
-            if (ready) {
-                AppShell()
-            } else {
-                ModelGate(
-                    state = model,
-                    onDownload = { graph.models.download(ai.tushar.nanochat.model.ModelId.Nano) },
-                    onRetry = { graph.models.refresh() },
-                    onUseFake = { scope.launch { graph.settings.setBackendChoice(BackendChoice.Fake) } },
-                )
-            }
-        }
-    }
+    // Each chat shows its own model's download screen, so the list is always usable.
+    CompositionLocalProvider(LocalDevTools provides devTools) { AppShell() }
 }
 
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
@@ -129,6 +104,9 @@ private fun AppShell() {
     val agentsVm = graphViewModel { AgentsViewModel(it) }
     val graph = LocalContext.current.graph
     val defaults by graph.settings.defaultParams.collectAsStateWithLifecycle(initialValue = GenerationParams.Default)
+    val defaultModel by graph.settings.defaultModel.collectAsStateWithLifecycle(initialValue = ModelId.Default)
+    val modelStates by graph.models.states.collectAsStateWithLifecycle()
+    val modelInfos by graph.models.infos.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Editing?>(null) }
 
     val detail = Detail.parse(navigator.currentDestination?.contentKey)
@@ -186,6 +164,8 @@ private fun AppShell() {
         AgentEditorSheet(
             initial = (e as? Editing.Existing)?.agent?.let(AgentDraft::of),
             defaults = defaults,
+            defaultModel = defaultModel,
+            models = ModelId.entries.map { ModelChoice(it, modelStates.getValue(it), modelInfos.getValue(it)) },
             onDismiss = { editing = null },
             onSave = { draft ->
                 when (e) {

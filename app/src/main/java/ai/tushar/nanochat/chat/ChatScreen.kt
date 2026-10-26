@@ -1,6 +1,14 @@
 package ai.tushar.nanochat.chat
 
+import ai.tushar.nanochat.attachments.DraftAttachment
 import ai.tushar.nanochat.data.Agent
+import ai.tushar.nanochat.data.Attachment
+import ai.tushar.nanochat.data.AttachmentKind
+import ai.tushar.nanochat.gate.GateActions
+import ai.tushar.nanochat.gate.ModelGate
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.Color
+import java.io.File
 import ai.tushar.nanochat.data.Message
 import ai.tushar.nanochat.data.Role
 import ai.tushar.nanochat.devtools.ChatInternalsSheet
@@ -115,6 +123,7 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
     var showInternals by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
+    var viewing by rememberSaveable { mutableStateOf<String?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -131,9 +140,11 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
                             Spacer(Modifier.width(12.dp))
                             Column {
                                 Text(agent.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                val waking = state.model?.let { it.ready && it.info.loading } == true
                                 val status = when {
                                     state.pending?.thinking == true -> "thinking…"
                                     state.pending != null -> "typing…"
+                                    waking -> "waking up…"
                                     else -> "on your phone"
                                 }
                                 AnimatedContent(status, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "status") {
@@ -141,7 +152,7 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
                                         it,
                                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = if (state.pending != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = if (state.pending != null || waking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
                             }
@@ -184,33 +195,46 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
                 .padding(padding)
                 .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
         ) {
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                if (agent != null) {
-                    if (state.loaded && state.messages.isEmpty() && state.pending == null) {
-                        EmptyChat(agent, tint)
-                    } else {
-                        MessageList(state, agent, tint)
-                    }
+            val model = state.model
+            if (agent == null || model == null) {
+                Spacer(Modifier.weight(1f))
+                return@Column
+            }
+            // The gate stands in for the messages and composer until the companion's model can answer.
+            AnimatedContent(
+                targetState = model.ready,
+                transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(160)) },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                label = "gate",
+            ) { ready ->
+                if (!ready) {
+                    ModelGate(
+                        agentName = agent.name,
+                        tint = tint,
+                        id = model.id,
+                        state = model.state,
+                        info = model.info,
+                        actions = GateActions(
+                            onDownload = { vm.download(model.id) },
+                            onCancel = { vm.cancelDownload(model.id) },
+                            onRetry = { vm.recheck(model.id) },
+                            onUseOther = { vm.useModel(it) },
+                            onUseFake = { vm.useFakeModels() },
+                        ),
+                    )
+                } else {
+                    ChatBody(vm, state, agent, model, tint, onOpenPhoto = { viewing = it })
                 }
             }
-            AnimatedVisibility(state.problem != null) {
-                state.problem?.let { ProblemCard(it.message, it.canRetry, onRetry = vm::retry) }
-            }
-            Composer(
-                value = vm.draft,
-                onValueChange = { vm.draft = it },
-                placeholder = "Message ${agent?.name.orEmpty()}",
-                busy = state.pending != null,
-                onSend = vm::send,
-                onStop = vm::stop,
-            )
         }
     }
 
+    viewing?.let { name -> PhotoViewer(vm.file(name), onClose = { viewing = null }) }
+
     if (showInternals) {
         val generation by vm.lastGeneration.collectAsStateWithLifecycle()
-        val info by vm.modelInfo.collectAsStateWithLifecycle()
-        ChatInternalsSheet(generation, info, onDismiss = { showInternals = false })
+        val infos by vm.modelInfos.collectAsStateWithLifecycle()
+        state.model?.let { ChatInternalsSheet(generation, it.info, infos, onDismiss = { showInternals = false }) }
     }
 
     confirm?.let { c ->
@@ -240,6 +264,65 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
 
 private enum class Confirm { Clear, Delete }
 
+/** Messages and composer, once the model is ready. */
+@Composable
+private fun ChatBody(vm: ChatViewModel, state: ChatState, agent: Agent, model: ChatModel, tint: Color, onOpenPhoto: (String) -> Unit) {
+    val drafts by vm.drafts.collectAsStateWithLifecycle()
+    val recording by vm.recording.collectAsStateWithLifecycle()
+    var denied by rememberSaveable { mutableStateOf<Denied?>(null) }
+    Column(Modifier.fillMaxSize()) {
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (state.loaded && state.messages.isEmpty() && state.pending == null) {
+                EmptyChat(agent, tint)
+            } else {
+                MessageList(state, agent, tint, vm::file, onOpenPhoto)
+            }
+        }
+        AnimatedVisibility(state.problem != null) {
+            state.problem?.let { ProblemCard(it.message, it.canRetry, onRetry = vm::retry) }
+        }
+        AnimatedVisibility(vm.attachProblem != null) {
+            vm.attachProblem?.let { ProblemCard(it.message, canRetry = false, onRetry = {}, onDismiss = { vm.attachProblem = null }) }
+        }
+        AnimatedVisibility(denied != null) {
+            denied?.let { PermissionCard(it, onDismiss = { denied = null }) }
+        }
+        val media = model.media
+        val photos = drafts.count { it.kind == AttachmentKind.Image }
+        val notes = drafts.count { it.kind == AttachmentKind.Audio }
+        val rec = recording
+        if (rec != null) {
+            RecordingBar(rec, onCancel = vm::cancelRecording, onStop = { vm.stopRecording() }, onSend = { vm.stopRecording(andSend = true) })
+        } else {
+            Composer(
+                value = vm.draft,
+                onValueChange = { vm.draft = it },
+                placeholder = "Message ${agent.name}",
+                busy = state.pending != null,
+                onSend = vm::send,
+                onStop = vm::stop,
+                drafts = drafts,
+                fileOf = vm::file,
+                onRemoveDraft = vm::removeDraft,
+                attach = if (media.images || media.audio) {
+                    {
+                        AttachButton(
+                            options = AttachOptions(
+                                photosLeft = (media.maxImages - photos).coerceAtLeast(0),
+                                maxPhotos = media.maxImages,
+                                voiceNote = if (media.audio) notes < media.maxAudioClips else null,
+                            ),
+                            onPhotos = { uris, then -> vm.addPhotos(uris, then) },
+                            onRecord = vm::startRecording,
+                            onDenied = { denied = it },
+                        )
+                    }
+                } else null,
+            )
+        }
+    }
+}
+
 private sealed interface ChatRow {
     val key: Any
     data class Bubble(val message: Message, val lastInGroup: Boolean, val firstInGroup: Boolean) : ChatRow {
@@ -264,8 +347,9 @@ private fun rows(messages: List<Message>, pending: String?): List<ChatRow> {
 }
 
 @Composable
-private fun MessageList(state: ChatState, agent: Agent, tint: androidx.compose.ui.graphics.Color) {
+private fun MessageList(state: ChatState, agent: Agent, tint: Color, fileOf: (String) -> File, onOpenPhoto: (String) -> Unit) {
     val listState = rememberLazyListState()
+    val voice = rememberVoicePlayer()
     val items = remember(state.messages, state.pending) { rows(state.messages, state.pending?.text) }
     val lastId = state.messages.lastOrNull()?.id
     LaunchedEffect(lastId, state.pending?.thinking) {
@@ -291,11 +375,7 @@ private fun MessageList(state: ChatState, agent: Agent, tint: androidx.compose.u
                     is ChatRow.Bubble -> {
                         val gap = if (row.firstInGroup) 10.dp else 2.dp
                         if (row.message.role == Role.User) {
-                            Row(Modifier.fillMaxWidth().padding(top = gap), horizontalArrangement = Arrangement.End) {
-                                Box(Modifier.widthIn(max = maxBubble)) {
-                                    Bubble(Role.User, tail = row.lastInGroup, speech = "You: ${row.message.text}") { BubbleText(row.message.text, Role.User) }
-                                }
-                            }
+                            UserMessage(row, state.attachments[row.message.id].orEmpty(), gap, maxBubble, fileOf, voice, onOpenPhoto)
                         } else {
                             Column {
                                 AgentLine(tint, showAvatar = row.lastInGroup, topGap = gap, maxBubble = maxBubble) {
@@ -311,9 +391,41 @@ private fun MessageList(state: ChatState, agent: Agent, tint: androidx.compose.u
     }
 }
 
+/** A user message: photos, then voice notes, then the text bubble. Media-only messages have no text bubble. */
+@Composable
+private fun UserMessage(
+    row: ChatRow.Bubble,
+    media: List<Attachment>,
+    gap: Dp,
+    maxBubble: Dp,
+    fileOf: (String) -> File,
+    voice: VoicePlayer,
+    onOpenPhoto: (String) -> Unit,
+) {
+    val text = row.message.text
+    val photos = media.filter { it.kind == AttachmentKind.Image }
+    val notes = media.filter { it.kind == AttachmentKind.Audio }
+    Column(
+        Modifier.fillMaxWidth().padding(top = gap),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        if (photos.isNotEmpty()) PhotoGroup(photos, fileOf, maxBubble) { onOpenPhoto(it.file) }
+        notes.forEachIndexed { i, a ->
+            val tail = row.lastInGroup && text.isEmpty() && i == notes.lastIndex
+            VoicePill(a, fileOf(a.file), voice, bubbleShape(mine = true, tail = tail))
+        }
+        if (text.isNotEmpty()) {
+            Box(Modifier.widthIn(max = maxBubble)) {
+                Bubble(Role.User, tail = row.lastInGroup, speech = "You: $text") { BubbleText(text, Role.User) }
+            }
+        }
+    }
+}
+
 @Composable
 private fun AgentLine(
-    tint: androidx.compose.ui.graphics.Color,
+    tint: Color,
     showAvatar: Boolean,
     topGap: Dp,
     maxBubble: Dp,
@@ -332,12 +444,7 @@ private fun AgentLine(
 private fun Bubble(role: Role, tail: Boolean, speech: String? = null, content: @Composable () -> Unit) {
     val colors = LocalChatColors.current
     val mine = role == Role.User
-    val small = if (tail) BubbleTail else BubbleRadius
-    val shape = RoundedCornerShape(
-        topStart = BubbleRadius, topEnd = BubbleRadius,
-        bottomStart = if (mine) BubbleRadius else small,
-        bottomEnd = if (mine) small else BubbleRadius,
-    )
+    val shape = bubbleShape(mine, tail)
     Surface(
         color = if (mine) colors.userBubble else colors.agentBubble,
         contentColor = if (mine) colors.onUserBubble else colors.onAgentBubble,
@@ -347,6 +454,15 @@ private fun Bubble(role: Role, tail: Boolean, speech: String? = null, content: @
     ) {
         Box(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) { content() }
     }
+}
+
+private fun bubbleShape(mine: Boolean, tail: Boolean): RoundedCornerShape {
+    val small = if (tail) BubbleTail else BubbleRadius
+    return RoundedCornerShape(
+        topStart = BubbleRadius, topEnd = BubbleRadius,
+        bottomStart = if (mine) BubbleRadius else small,
+        bottomEnd = if (mine) small else BubbleRadius,
+    )
 }
 
 @Composable
@@ -375,7 +491,7 @@ internal fun formatReply(text: String): AnnotatedString = buildAnnotatedString {
 }
 
 @Composable
-private fun EmptyChat(agent: Agent, tint: androidx.compose.ui.graphics.Color) {
+private fun EmptyChat(agent: Agent, tint: Color) {
     Column(
         Modifier.fillMaxSize().padding(32.dp),
         verticalArrangement = Arrangement.Center,
@@ -395,7 +511,7 @@ private fun EmptyChat(agent: Agent, tint: androidx.compose.ui.graphics.Color) {
 }
 
 @Composable
-private fun ProblemCard(message: String, canRetry: Boolean, onRetry: () -> Unit) {
+private fun ProblemCard(message: String, canRetry: Boolean, onRetry: () -> Unit, onDismiss: (() -> Unit)? = null) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -408,6 +524,7 @@ private fun ProblemCard(message: String, canRetry: Boolean, onRetry: () -> Unit)
         Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(message, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(vertical = 6.dp))
             if (canRetry) TextButton(onClick = onRetry) { Text("Try again") }
+            if (onDismiss != null) IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) { Ico(Icons.Close, "Dismiss", size = 18.dp) }
         }
     }
 }
@@ -420,18 +537,26 @@ private fun Composer(
     busy: Boolean,
     onSend: () -> Unit,
     onStop: () -> Unit,
+    drafts: List<DraftAttachment>,
+    fileOf: (String) -> File,
+    onRemoveDraft: (DraftAttachment) -> Unit,
+    /** The attach button, or null when the model takes text only. */
+    attach: (@Composable () -> Unit)?,
 ) {
     val colors = LocalChatColors.current
     Row(
-        Modifier.fillMaxWidth().padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 10.dp),
+        Modifier.fillMaxWidth().padding(start = if (attach != null) 4.dp else 12.dp, end = 8.dp, top = 6.dp, bottom = 10.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
+        attach?.invoke()
         Surface(
             color = colors.agentBubble,
             shape = RoundedCornerShape(24.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.weight(1f),
         ) {
+            Column {
+            if (drafts.isNotEmpty()) DraftStrip(drafts, fileOf, onRemoveDraft)
             Box(Modifier.heightIn(min = 48.dp).padding(horizontal = 18.dp, vertical = 12.dp), contentAlignment = Alignment.CenterStart) {
                 BasicTextField(
                     decorationBox = { inner ->
@@ -457,9 +582,10 @@ private fun Composer(
                     modifier = Modifier.fillMaxWidth().semantics { contentDescription = placeholder },
                 )
             }
+            }
         }
         Spacer(Modifier.width(6.dp))
-        val canSend = value.isNotBlank()
+        val canSend = value.isNotBlank() || drafts.isNotEmpty()
         FilledIconButton(
             onClick = if (busy) onStop else onSend,
             enabled = busy || canSend,

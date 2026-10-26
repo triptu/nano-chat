@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Camera captures land here before they're copied into app storage, then get deleted. -->
+<paths>
+    <cache-path name="camera" path="camera/" />
+</paths>
