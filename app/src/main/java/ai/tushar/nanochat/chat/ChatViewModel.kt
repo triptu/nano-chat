@@ -36,7 +36,7 @@ class ChatViewModel(private val graph: AppGraph, val agentId: Long) : ViewModel(
         graph.dao.messages(agentId),
         graph.engine.pending.map { it[agentId] },
         graph.engine.problems.map { it[agentId] },
-        graph.model.state,
+        graph.models.state(ai.tushar.nanochat.model.ModelId.Nano),
     ) { agent, messages, pending, problem, model ->
         ChatState(agent, messages, pending, problem, model == ModelState.Ready, loaded = true)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatState())
@@ -45,7 +45,7 @@ class ChatViewModel(private val graph: AppGraph, val agentId: Long) : ViewModel(
     val lastGeneration: StateFlow<Generation?> =
         graph.dao.lastGeneration(agentId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    val modelInfo: StateFlow<ModelInfo> = graph.model.info
+    val modelInfo: StateFlow<ModelInfo> = graph.models.infos.map { it.getValue(ai.tushar.nanochat.model.ModelId.Nano) }.stateIn(viewModelScope, SharingStarted.Eagerly, graph.models.infos.value.getValue(ai.tushar.nanochat.model.ModelId.Nano))
 
     fun send() {
         val text = draft

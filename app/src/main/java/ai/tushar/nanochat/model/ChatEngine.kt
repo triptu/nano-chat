@@ -1,5 +1,8 @@
 package ai.tushar.nanochat.model
 
+import ai.tushar.nanochat.attachments.AttachmentStore
+import ai.tushar.nanochat.attachments.DraftAttachment
+import ai.tushar.nanochat.data.Agent
 import ai.tushar.nanochat.data.ChatDao
 import ai.tushar.nanochat.data.Generation
 import ai.tushar.nanochat.data.Message
@@ -32,8 +35,6 @@ data class PendingReply(val text: String) {
 /** Something went wrong with the last reply, worded for the person chatting. */
 data class ReplyProblem(val message: String, val canRetry: Boolean)
 
-/** Max input the Prompt API accepts, whatever the model's total limit. */
-const val InputTokenCap = 4000
 private const val HistoryRows = 80
 private const val CancelledByUser = "CANCELLED_BY_USER"
 
@@ -43,8 +44,9 @@ private const val CancelledByUser = "CANCELLED_BY_USER"
  */
 class ChatEngine(
     private val dao: ChatDao,
-    private val model: NanoModel,
+    private val models: Models,
     private val settings: Settings,
+    private val store: AttachmentStore,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
@@ -57,10 +59,14 @@ class ChatEngine(
     private val _problems = MutableStateFlow<Map<Long, ReplyProblem>>(emptyMap())
     val problems: StateFlow<Map<Long, ReplyProblem>> = _problems.asStateFlow()
 
-    fun send(agentId: Long, text: String): Job? {
+    /** Sends a message with optional photos or voice notes. A message may be media only. */
+    fun send(agentId: Long, text: String, attachments: List<DraftAttachment> = emptyList()): Job? {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || agentId in jobs) return null
-        return start(agentId) { dao.insertMessage(Message(agentId = agentId, role = Role.User, text = trimmed, createdAt = now())) }
+        if ((trimmed.isEmpty() && attachments.isEmpty()) || agentId in jobs) return null
+        return start(agentId) {
+            val id = dao.insertMessage(Message(agentId = agentId, role = Role.User, text = trimmed, createdAt = now()))
+            if (attachments.isNotEmpty()) dao.insertAttachments(attachments.map { it.toAttachment(id) })
+        }
     }
 
     fun retry(agentId: Long): Job? = if (agentId in jobs) null else start(agentId) {}
@@ -88,16 +94,25 @@ class ChatEngine(
 
     private suspend fun reply(agentId: Long) {
         val agent = dao.agentNow(agentId) ?: return
-        val backend = model.backend
+        val modelId = ModelId.parse(agent.model) ?: settings.defaultModelNow()
+        models.use(modelId) { backend -> reply(agent, modelId, backend) }
+    }
+
+    private suspend fun reply(agent: Agent, modelId: ModelId, backend: ModelBackend) {
+        val agentId = agent.id
         val defaults = settings.defaultParamsNow()
-        val limit = runCatching { model.tokenLimit() }.getOrNull()
+        val limit = runCatching { backend.tokenLimit() }.getOrNull()
+        val cap = runCatching { backend.inputTokenCap() }.getOrDefault(limit ?: 4000)
         val params = GenerationParams(
             temperature = agent.temperature ?: defaults.temperature,
             topK = agent.topK ?: defaults.topK,
             maxOutputTokens = (agent.maxOutputTokens ?: defaults.maxOutputTokens).let { if (limit != null) it.coerceAtMost(limit / 2) else it },
         )
-        val budget = minOf(InputTokenCap, (limit ?: Int.MAX_VALUE) - params.maxOutputTokens) - 8
-        val history = dao.recentMessages(agentId, HistoryRows).map { Turn(it.role, it.text) }
+        val budget = minOf(cap, (limit ?: Int.MAX_VALUE) - params.maxOutputTokens) - 8
+        val media = dao.attachmentsNow(agentId).groupBy { it.messageId }
+        val history = dao.recentMessages(agentId, HistoryRows).map { m ->
+            Turn(m.role, m.text, media[m.id].orEmpty().map { TurnMedia(it.kind, store.file(it.modelFile).absolutePath, it.durationMs) })
+        }
         if (history.firstOrNull()?.role != Role.User) return
 
         val window = PromptWindow(agent.name, settings.displayName.first())
@@ -105,9 +120,10 @@ class ChatEngine(
         val useCache = !useSystem && backend.supportsPrefixCaching()
         val started = now()
         val clock = TimeSource.Monotonic.markNow()
+        val loadedBefore = backend.info().loadMs
 
         val plan = try {
-            when (val r = window.build(agent.personality, history, budget, useSystem, backend::countTokens)) {
+            when (val r = window.build(agent.personality, history, budget, useSystem, backend::countTokens, backend.media)) {
                 is PromptResult.Fits -> r.plan
                 is PromptResult.TooLong -> return problem(agentId, ReplyProblem("That message is too long for ${agent.name}. Try a shorter one.", canRetry = false))
             }
@@ -120,6 +136,7 @@ class ChatEngine(
         var finish: String? = null
         var error: String? = null
         var hitNextTurn = false
+        var stats: RunStats? = null
         val prefix = window.instructions(plan.systemPrompt).takeIf { useCache && plan.prompt.startsWith(it) }
         val request = GenerateRequest(
             systemPrompt = plan.systemPrompt.takeIf { plan.useSystemInstruction },
@@ -128,8 +145,16 @@ class ChatEngine(
             temperature = params.temperature,
             topK = params.topK,
             maxOutputTokens = params.maxOutputTokens,
+            turns = plan.turns,
+            chatKey = agentId,
         )
-        fun record() = Record(agentId, agent.name, out.toString(), firstTokenMs, clock.elapsedNow().inWholeMilliseconds, plan, params, finish, error, started, backend, prefix != null)
+        suspend fun record(): Record {
+            val info = runCatching { backend.info() }.getOrNull()
+            return Record(
+                agentId, agent.name, out.toString(), firstTokenMs, clock.elapsedNow().inWholeMilliseconds, plan, params, finish, error, started, backend,
+                prefix != null, modelId, info?.accelerator, info?.loadMs?.takeIf { it != loadedBefore }, stats,
+            )
+        }
         try {
             backend.generate(request).takeWhile { !hitNextTurn }.collect { chunk ->
                 if (chunk.text.isNotEmpty()) {
@@ -141,6 +166,7 @@ class ChatEngine(
                     _pending.update { it + (agentId to PendingReply(shown)) }
                 }
                 chunk.finishReason?.let { finish = it }
+                chunk.stats?.let { stats = it }
             }
         } catch (e: CancellationException) {
             finish = CancelledByUser
@@ -163,19 +189,25 @@ class ChatEngine(
         val plan: PromptPlan, val params: GenerationParams, val finish: String?, val error: String?, val started: Long,
         val backend: ModelBackend,
         val usedPrefixCache: Boolean,
+        val model: ModelId,
+        val accelerator: String?,
+        val loadMs: Long?,
+        val stats: RunStats?,
     )
 
     private suspend fun save(r: Record) {
         val text = cleanReply(r.raw, r.agentName)
         val outputTokens = if (text.isEmpty()) 0 else runCatching { r.backend.countTokens(null, text) }.getOrDefault(0)
         val genMs = (r.totalMs - (r.ttft ?: r.totalMs)).coerceAtLeast(1)
-        val tps = if (outputTokens > 1 && r.ttft != null) (outputTokens - 1) * 1000f / genMs else null
+        val tps = r.stats?.decodeTokensPerSecond ?: if (outputTokens > 1 && r.ttft != null) (outputTokens - 1) * 1000f / genMs else null
         if (text.isEmpty() && r.error == null && r.finish != CancelledByUser) {
             problem(r.agentId, ReplyProblem("${r.agentName} didn't have anything to say. Try asking another way.", canRetry = true))
         }
         if (text.isNotEmpty()) {
             dao.insertMessage(
-                Message(agentId = r.agentId, role = Role.Agent, text = text, createdAt = now(), ttftMs = r.ttft, tokensPerSecond = tps, outputTokens = outputTokens),
+                Message(agentId = r.agentId, role = Role.Agent, text = text, createdAt = now(), ttftMs = r.ttft, tokensPerSecond = tps, outputTokens = outputTokens,
+                    model = r.model.name, accelerator = r.accelerator,
+                ),
             )
         }
         dao.insertGeneration(
@@ -187,6 +219,10 @@ class ChatEngine(
                 temperature = r.params.temperature, topK = r.params.topK, maxOutputTokens = r.params.maxOutputTokens,
                 ttftMs = r.ttft, totalMs = r.totalMs, outputTokens = outputTokens,
                 finishReason = r.finish, error = r.error,
+                model = r.model.name, accelerator = r.accelerator, loadMs = r.loadMs,
+                prefillTokensPerSecond = r.stats?.prefillTokensPerSecond, decodeTokensPerSecond = r.stats?.decodeTokensPerSecond,
+                imagesSent = r.plan.mediaKept.images, imagesDropped = r.plan.mediaDropped.images,
+                audioSent = r.plan.mediaKept.audio, audioDropped = r.plan.mediaDropped.audio,
             ),
         )
     }
@@ -198,7 +234,7 @@ class ChatEngine(
         ModelErrorKind.Quota -> ReplyProblem("$name needs a rest. Android limits how much one app can use the model${waitHint(e.retryAfter)}.", canRetry = true)
         ModelErrorKind.Background -> ReplyProblem("$name only answers while the app is open on screen.", canRetry = true)
         ModelErrorKind.TooLarge -> ReplyProblem("That message is too long for $name. Try a shorter one.", canRetry = false)
-        ModelErrorKind.NotReady -> ReplyProblem("The model isn't ready on this phone yet. Check Google AICore for updates.", canRetry = true)
+        ModelErrorKind.NotReady -> ReplyProblem("$name's model isn't ready yet. Try again in a moment.", canRetry = true)
         ModelErrorKind.Other -> ReplyProblem("$name got stuck on that one. Try again?", canRetry = true)
     }
 

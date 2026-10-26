@@ -70,7 +70,7 @@ private const val LogSize = 30
 
 data class StatsState(
     val model: ModelState = ModelState.Checking,
-    val info: ModelInfo = ModelInfo(BackendKind.Real, BackendChoice.Auto, null),
+    val info: ModelInfo = ModelInfo(ai.tushar.nanochat.model.ModelId.Nano, BackendKind.Real, BackendChoice.Auto, null),
     val fakeScenario: FakeScenario = FakeScenario.Normal,
     val defaults: GenerationParams = GenerationParams.Default,
     val totals: GenerationTotals? = null,
@@ -82,7 +82,7 @@ class StatsViewModel(private val graph: AppGraph) : ViewModel() {
     private val names = graph.dao.agentPreviews().map { list -> list.associate { it.agent.id to it.agent.name } }
 
     val state: StateFlow<StatsState> = combine(
-        combine(graph.model.state, graph.model.info, graph.settings.fakeScenario, ::Triple),
+        combine(graph.models.state(ai.tushar.nanochat.model.ModelId.Nano), graph.models.info(ai.tushar.nanochat.model.ModelId.Nano), graph.settings.fakeScenario, ::Triple),
         graph.settings.defaultParams,
         graph.dao.generationTotals(),
         graph.dao.messageCount(),
@@ -94,9 +94,9 @@ class StatsViewModel(private val graph: AppGraph) : ViewModel() {
     fun setDefaults(p: GenerationParams) = viewModelScope.launch { graph.settings.setDefaultParams(p) }
     fun setBackend(c: BackendChoice) = viewModelScope.launch { graph.settings.setBackendChoice(c) }
     fun setScenario(s: FakeScenario) = viewModelScope.launch { graph.settings.setFakeScenario(s) }
-    fun download() = graph.model.download()
-    fun refresh() = graph.model.refresh()
-    fun warmup() = viewModelScope.launch { runCatching { graph.model.warmup() } }
+    fun download() = graph.models.download(ai.tushar.nanochat.model.ModelId.Nano)
+    fun refresh() = graph.models.refresh()
+    fun warmup() = graph.models.warm(ai.tushar.nanochat.model.ModelId.Nano)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -167,7 +167,7 @@ private fun ModelCard(s: StatsState, vm: StatsViewModel) {
                 ) { Text(c.label) }
             }
         }
-        Fact("Running", info.backend.label)
+        Fact("Running", info.id.label + if (info.backend == BackendKind.Fake) " (fake)" else "")
         Fact("Status", statusText(s.model))
         Fact("Real model check", info.realAvailability?.name ?: "no answer from AICore")
         info.baseModelName?.let { Fact("Base model", it) }

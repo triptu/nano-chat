@@ -13,6 +13,7 @@ enum class FakeScenario(val label: String) {
     Busy("Busy"),
     Quota("Out of quota"),
     Unsupported("Unsupported phone"),
+    LoadFails("Model fails to load"),
 }
 
 /** Timing of fake replies. Defaults match what Gemini Nano feels like on a recent phone. */
@@ -30,8 +31,16 @@ class FakeBackend(
     var scenario: FakeScenario = FakeScenario.Normal,
     private val random: Random = Random.Default,
     private val pace: FakePace = FakePace(),
+    /** Which model this stands in for; sets its media support, size and context. */
+    private val model: ModelId = ModelId.Nano,
 ) : ModelBackend {
     override val kind = BackendKind.Fake
+    override val media: MediaSupport = when (model) {
+        ModelId.Nano -> MediaSupport(maxImages = 1, imagesInNewestTurnOnly = true, tokensPerImage = 260, audio = false)
+        ModelId.GemmaE4B -> MediaSupport(maxImages = 4, imagesInNewestTurnOnly = false, tokensPerImage = 280, audio = true, audioTokensPerSecond = 25)
+    }
+    override val nativeChat: Boolean = model != ModelId.Nano
+    override val downloadBytes: Long = if (model == ModelId.Nano) 1_480_000_000L else 3_659_530_240L
     private var downloaded = false
 
     override suspend fun availability(): Availability = when (scenario) {
@@ -41,7 +50,7 @@ class FakeBackend(
     }
 
     override fun download(): Flow<DownloadEvent> = flow {
-        val total = 1_480_000_000L
+        val total = downloadBytes
         emit(DownloadEvent.Started(total))
         var done = 0L
         while (done < total) {
@@ -53,8 +62,16 @@ class FakeBackend(
         emit(DownloadEvent.Completed)
     }
 
-    override suspend fun warmup() = delay(250)
-    override suspend fun tokenLimit(): Int = 4096
+    override suspend fun delete() {
+        downloaded = false
+    }
+
+    override suspend fun warmup() {
+        delay(250)
+        if (scenario == FakeScenario.LoadFails) throw ModelException(ModelErrorKind.NotReady, null, "LOAD_FAILED", "Fake: engine failed to load")
+    }
+    override suspend fun tokenLimit(): Int = if (model == ModelId.Nano) 4096 else 8192
+    override suspend fun inputTokenCap(): Int = if (model == ModelId.Nano) 4000 else 8192
     override suspend fun supportsSystemPrompt(): Boolean = true
     override suspend fun supportsPrefixCaching(): Boolean = false
     override suspend fun countTokens(systemPrompt: String?, prompt: String): Int = estimateTokens(systemPrompt.orEmpty()) + estimateTokens(prompt)
@@ -66,9 +83,10 @@ class FakeBackend(
                 ModelErrorKind.Quota, 27, "PER_APP_BATTERY_USE_QUOTA_EXCEEDED", "Fake: quota", Duration.ofMinutes(20),
             )
             FakeScenario.Unsupported -> throw ModelException(ModelErrorKind.NotReady, 8, "NOT_AVAILABLE", "Fake: unsupported")
+            FakeScenario.LoadFails -> throw ModelException(ModelErrorKind.NotReady, null, "LOAD_FAILED", "Fake: engine failed to load")
             else -> Unit
         }
-        val reply = pickReply(request)
+        val reply = mediaReply(request) ?: pickReply(request)
         val tokens = splitTokens(reply)
         val limited = tokens.take(request.maxOutputTokens)
         delay(pace.firstTokenMs.random(random).toLong())
@@ -80,7 +98,25 @@ class FakeBackend(
         emit(GenerateChunk("", if (limited.size < tokens.size) "MAX_TOKENS" else "STOP"))
     }
 
-    override suspend fun info() = BackendInfo(baseModelName = "fake-nano", cachingAvailable = false, aicoreVersion = null)
+    override suspend fun info() = BackendInfo(
+        baseModelName = if (model == ModelId.Nano) "fake-nano" else "fake-gemma",
+        cachingAvailable = false,
+        accelerator = if (model == ModelId.Nano) null else "GPU",
+        loadMs = if (model == ModelId.Nano) null else 250,
+    )
+
+    /** A canned line that mentions the photos or voice notes on the newest message, if it has any. */
+    private fun mediaReply(request: GenerateRequest): String? {
+        val newest = request.turns.lastOrNull() ?: return null
+        val photos = newest.media.count { it.kind == ai.tushar.nanochat.data.AttachmentKind.Image }
+        val notes = newest.media.count { it.kind == ai.tushar.nanochat.data.AttachmentKind.Audio }
+        if (photos == 0 && notes == 0) return null
+        val what = listOfNotNull(
+            when (photos) { 0 -> null; 1 -> "your photo"; else -> "your $photos photos" },
+            when (notes) { 0 -> null; 1 -> "your voice note"; else -> "your $notes voice notes" },
+        ).joinToString(" and ")
+        return "Thanks for $what! I'm the fake model, so I can't really see or hear it, but on a real phone I'd describe it here and answer your question."
+    }
 
     private fun pickReply(request: GenerateRequest): String {
         val persona = (request.systemPrompt ?: (request.promptPrefix.orEmpty() + request.prompt)).lowercase()

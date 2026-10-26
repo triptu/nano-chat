@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import ai.tushar.nanochat.model.FakeScenario
+import ai.tushar.nanochat.model.ModelId
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -25,7 +26,9 @@ data class GenerationParams(val temperature: Float, val topK: Int, val maxOutput
     }
 }
 
-/** Which model backend runs. Only the dev tools can change it; with dev tools off it is always [Auto]. */
+/**
+ * Real models or the fake stand-in, for every model at once. Only the dev tools can change it; with dev tools off it is always [Auto].
+ */
 enum class BackendChoice(val label: String) { Auto("Auto"), Real("Real"), Fake("Fake") }
 
 private val Context.store by preferencesDataStore("settings")
@@ -41,7 +44,14 @@ class Settings(context: Context) {
         val maxOutput = intPreferencesKey("default_max_output_tokens")
         val backend = stringPreferencesKey("backend_choice")
         val fakeScenario = stringPreferencesKey("fake_scenario")
+        val defaultModel = stringPreferencesKey("default_model")
     }
+
+    /** The model companions use unless they pick their own. */
+    val defaultModel: Flow<ModelId> = store.data.map { ModelId.parse(it[Keys.defaultModel]) ?: ModelId.Default }.distinctUntilChanged()
+
+    suspend fun defaultModelNow(): ModelId = defaultModel.first()
+    suspend fun setDefaultModel(m: ModelId) = store.edit { it[Keys.defaultModel] = m.name }
 
     val displayName: Flow<String> = store.data.map { it[Keys.displayName].orEmpty() }.distinctUntilChanged()
 

@@ -6,3 +6,6 @@
 -keep class com.google.mlkit.** { *; }
 -keep class com.google.android.gms.internal.mlkit_** { *; }
 -keep class * implements com.google.firebase.components.ComponentRegistrar { *; }
+
+# LiteRT-LM calls back into its Kotlin classes from JNI (callbacks, BenchmarkInfo, SamplerConfig fields).
+-keep class com.google.ai.edge.litertlm.** { *; }

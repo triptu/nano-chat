@@ -33,6 +33,8 @@ data class Agent(
     val topK: Int? = null,
     val maxOutputTokens: Int? = null,
     val createdAt: Long,
+    /** [ai.tushar.nanochat.model.ModelId] name; null means "use the default model from the nerds page". */
+    @ColumnInfo(defaultValue = "NULL") val model: String? = null,
 )
 
 /** Colors an agent can wear. Stored by name so the palette can be retuned without a migration. */
@@ -55,6 +57,31 @@ data class Message(
     val ttftMs: Long? = null,
     val tokensPerSecond: Float? = null,
     val outputTokens: Int? = null,
+    /** [ai.tushar.nanochat.model.ModelId] name and "GPU"/"CPU", set on agent replies. */
+    @ColumnInfo(defaultValue = "NULL") val model: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val accelerator: String? = null,
+)
+
+enum class AttachmentKind { Image, Audio }
+
+/**
+ * A photo or voice note on a user message. Files live in app-private storage under `attachments/`;
+ * [file] is what the chat shows or plays, [modelFile] is the copy sent to the model (a downscaled PNG for photos).
+ */
+@Entity(
+    tableName = "attachments",
+    foreignKeys = [ForeignKey(entity = Message::class, parentColumns = ["id"], childColumns = ["messageId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("messageId")],
+)
+data class Attachment(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val messageId: Long,
+    val kind: AttachmentKind,
+    val file: String,
+    val modelFile: String,
+    val width: Int? = null,
+    val height: Int? = null,
+    val durationMs: Long? = null,
 )
 
 /** One call to the model, kept for the dev tools' internals sheet and stats page. */
@@ -85,6 +112,16 @@ data class Generation(
     val outputTokens: Int,
     val finishReason: String?,
     val error: String?,
+    @ColumnInfo(defaultValue = "NULL") val model: String? = null,
+    @ColumnInfo(defaultValue = "NULL") val accelerator: String? = null,
+    /** How long loading the model took when this request had to load it first. */
+    @ColumnInfo(defaultValue = "NULL") val loadMs: Long? = null,
+    @ColumnInfo(defaultValue = "NULL") val prefillTokensPerSecond: Float? = null,
+    @ColumnInfo(defaultValue = "NULL") val decodeTokensPerSecond: Float? = null,
+    @ColumnInfo(defaultValue = "0") val imagesSent: Int = 0,
+    @ColumnInfo(defaultValue = "0") val imagesDropped: Int = 0,
+    @ColumnInfo(defaultValue = "0") val audioSent: Int = 0,
+    @ColumnInfo(defaultValue = "0") val audioDropped: Int = 0,
 )
 
 data class AgentPreview(
@@ -145,6 +182,18 @@ interface ChatDao {
     @Query("DELETE FROM messages WHERE agentId = :agentId")
     suspend fun clearMessages(agentId: Long)
 
+    @Insert suspend fun insertAttachments(attachments: List<Attachment>)
+
+    @Query("SELECT at.* FROM attachments at JOIN messages m ON m.id = at.messageId WHERE m.agentId = :agentId ORDER BY at.id")
+    fun attachments(agentId: Long): Flow<List<Attachment>>
+
+    @Query("SELECT at.* FROM attachments at JOIN messages m ON m.id = at.messageId WHERE m.agentId = :agentId ORDER BY at.id")
+    suspend fun attachmentsNow(agentId: Long): List<Attachment>
+
+    /** Every attachment file name still referenced, so unreferenced files can be cleaned up. */
+    @Query("SELECT file FROM attachments UNION SELECT modelFile FROM attachments")
+    suspend fun attachmentFiles(): List<String>
+
     @Insert suspend fun insertGeneration(generation: Generation): Long
 
     @Query("SELECT * FROM generations WHERE agentId = :agentId ORDER BY startedAt DESC LIMIT 1")
@@ -177,7 +226,30 @@ private object AddPrefixCacheColumn : Migration(1, 2) {
     }
 }
 
-@Database(entities = [Agent::class, Message::class, Generation::class], version = 2, exportSchema = false)
+private object AddModelsAndAttachments : Migration(2, 3) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE agents ADD COLUMN model TEXT DEFAULT NULL")
+        connection.execSQL("ALTER TABLE messages ADD COLUMN model TEXT DEFAULT NULL")
+        connection.execSQL("ALTER TABLE messages ADD COLUMN accelerator TEXT DEFAULT NULL")
+        for (col in listOf("model TEXT", "accelerator TEXT", "loadMs INTEGER", "prefillTokensPerSecond REAL", "decodeTokensPerSecond REAL")) {
+            connection.execSQL("ALTER TABLE generations ADD COLUMN $col DEFAULT NULL")
+        }
+        for (col in listOf("imagesSent", "imagesDropped", "audioSent", "audioDropped")) {
+            connection.execSQL("ALTER TABLE generations ADD COLUMN $col INTEGER NOT NULL DEFAULT 0")
+        }
+        // Old rows were all Gemini Nano.
+        connection.execSQL("UPDATE generations SET model = 'Nano' WHERE backend = 'Real'")
+        connection.execSQL("UPDATE messages SET model = 'Nano' WHERE role = 'Agent'")
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, messageId INTEGER NOT NULL, " +
+                "kind TEXT NOT NULL, file TEXT NOT NULL, modelFile TEXT NOT NULL, width INTEGER, height INTEGER, durationMs INTEGER, " +
+                "FOREIGN KEY(messageId) REFERENCES messages(id) ON UPDATE NO ACTION ON DELETE CASCADE)",
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_attachments_messageId ON attachments (messageId)")
+    }
+}
+
+@Database(entities = [Agent::class, Message::class, Generation::class, Attachment::class], version = 3, exportSchema = false)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
 
@@ -185,7 +257,7 @@ abstract class ChatDatabase : RoomDatabase() {
         fun open(context: Context): ChatDatabase =
             Room.databaseBuilder<ChatDatabase>(context, context.getDatabasePath("nano-chat.db").absolutePath)
                 .setDriver(BundledSQLiteDriver())
-                .addMigrations(AddPrefixCacheColumn)
+                .addMigrations(AddPrefixCacheColumn, AddModelsAndAttachments)
                 .setQueryCoroutineContext(Dispatchers.IO)
                 .build()
     }

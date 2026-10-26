@@ -1,11 +1,14 @@
 package ai.tushar.nanochat.model
 
+import ai.tushar.nanochat.data.AttachmentKind
 import android.content.Context
+import android.graphics.BitmapFactory
 import com.google.mlkit.genai.common.DownloadStatus
 import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Candidate
 import com.google.mlkit.genai.prompt.Generation
+import com.google.mlkit.genai.prompt.ImagePart
 import com.google.mlkit.genai.prompt.PromptPrefix
 import com.google.mlkit.genai.prompt.SystemInstruction
 import com.google.mlkit.genai.prompt.TextPart
@@ -19,6 +22,8 @@ import kotlinx.coroutines.flow.mapNotNull
 class MlKitBackend(private val context: Context) : ModelBackend {
     private val client = Generation.getClient()
     override val kind = BackendKind.Real
+    /** The Prompt API takes one image per request, with the text; it has no audio input. */
+    override val media = MediaSupport(maxImages = 1, imagesInNewestTurnOnly = true, tokensPerImage = NanoImageTokens, audio = false)
 
     override suspend fun availability(): Availability = wrap {
         when (client.checkStatus()) {
@@ -42,6 +47,8 @@ class MlKitBackend(private val context: Context) : ModelBackend {
 
     override suspend fun warmup() = wrap { client.warmup() }
     override suspend fun tokenLimit(): Int = wrap { client.getTokenLimit() }
+    /** Max input the Prompt API accepts, whatever the model's total limit. */
+    override suspend fun inputTokenCap(): Int = 4000
     override suspend fun supportsSystemPrompt(): Boolean = runCatching { client.isSystemPromptAvailable() }.getOrDefault(false)
     override suspend fun supportsPrefixCaching(): Boolean = runCatching { client.isCachingFeatureAvailable() }.getOrDefault(false)
 
@@ -58,10 +65,15 @@ class MlKitBackend(private val context: Context) : ModelBackend {
             maxOutputTokens = request.maxOutputTokens
             request.promptPrefix?.let { promptPrefix = PromptPrefix(it) }
         }
-        val req = if (request.systemPrompt != null) {
-            generateContentRequest(SystemInstruction(request.systemPrompt), TextPart(request.prompt), configure)
-        } else {
-            generateContentRequest(TextPart(request.prompt), configure)
+        val image = request.turns.lastOrNull()?.media?.firstOrNull { it.kind == AttachmentKind.Image }
+            ?.let { BitmapFactory.decodeFile(it.modelPath) }?.let(::ImagePart)
+        val text = TextPart(request.prompt)
+        val system = request.systemPrompt?.let(::SystemInstruction)
+        val req = when {
+            system != null && image != null -> generateContentRequest(system, image, text, configure)
+            system != null -> generateContentRequest(system, text, configure)
+            image != null -> generateContentRequest(image, text, configure)
+            else -> generateContentRequest(text, configure)
         }
         return client.generateContentStream(req)
             .mapNotNull { chunk ->
@@ -89,6 +101,9 @@ class MlKitBackend(private val context: Context) : ModelBackend {
         else -> "UNKNOWN($reason)"
     }
 }
+
+/** Rough input cost of one image for Nano; ML Kit counts only text, so the prompt window reserves this much. */
+private const val NanoImageTokens = 260
 
 private fun GenAiException.toModelException(): ModelException {
     val code = errorCode

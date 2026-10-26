@@ -2,7 +2,6 @@ package ai.tushar.nanochat.devtools
 
 import ai.tushar.nanochat.data.Generation
 import ai.tushar.nanochat.model.BackendKind
-import ai.tushar.nanochat.model.InputTokenCap
 import ai.tushar.nanochat.model.ModelInfo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -46,24 +45,24 @@ fun ChatInternalsSheet(generation: Generation?, info: ModelInfo, onDismiss: () -
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Text("Chat internals", style = MaterialTheme.typography.titleLarge)
-            Fact("Model now", info.backend.label + (info.baseModelName?.let { " · $it" } ?: ""))
+            Fact("Model now", info.id.label + (info.baseModelName?.let { " · $it" } ?: ""))
             if (generation == null) {
                 Text("Nothing sent yet. Send a message and the exact prompt shows up here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 return@Column
             }
             val sentWith = runCatching { BackendKind.valueOf(generation.backend) }.getOrNull()
-            if (sentWith != null && sentWith != info.backend) Fact("Last reply came from", sentWith.label)
+            if (sentWith != null && sentWith != info.backend) Fact("Last reply came from", sentWith.name)
 
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Input tokens", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                     Text(
-                        "${generation.inputTokens} of ${generation.inputBudget} (cap $InputTokenCap)",
+                        "${generation.inputTokens} of ${generation.inputBudget}",
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }
                 LinearProgressIndicator(
-                    progress = { (generation.inputTokens.toFloat() / InputTokenCap).coerceIn(0f, 1f) },
+                    progress = { (generation.inputTokens.toFloat() / generation.inputBudget.coerceAtLeast(1)).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
                     strokeCap = StrokeCap.Round,
                     drawStopIndicator = {},

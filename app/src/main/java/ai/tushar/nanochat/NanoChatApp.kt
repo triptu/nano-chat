@@ -2,10 +2,14 @@ package ai.tushar.nanochat
 
 import ai.tushar.nanochat.data.ChatDatabase
 import ai.tushar.nanochat.data.starterAgents
+import ai.tushar.nanochat.attachments.AttachmentStore
+import ai.tushar.nanochat.litert.LiteRtBackend
+import ai.tushar.nanochat.litert.LiteRtCatalog
 import ai.tushar.nanochat.model.ChatEngine
 import ai.tushar.nanochat.model.FakeBackend
 import ai.tushar.nanochat.model.MlKitBackend
-import ai.tushar.nanochat.model.NanoModel
+import ai.tushar.nanochat.model.ModelId
+import ai.tushar.nanochat.model.Models
 import ai.tushar.nanochat.settings.Settings
 import android.app.Application
 import android.content.Context
@@ -20,8 +24,17 @@ class AppGraph(context: Context) {
     val database = ChatDatabase.open(context)
     val dao = database.chatDao()
     val settings = Settings(context)
-    val model = NanoModel(MlKitBackend(context), FakeBackend(), allowAutoFake = BuildConfig.DEBUG, settings, scope)
-    val engine = ChatEngine(dao, model, settings, scope)
+    val attachments = AttachmentStore(context)
+    val models = Models(
+        real = ModelId.entries.associateWith { id ->
+            if (id == ModelId.Nano) MlKitBackend(context) else LiteRtBackend(context, LiteRtCatalog.getValue(id))
+        },
+        fakes = ModelId.entries.associateWith { FakeBackend(model = it) },
+        allowAutoFake = BuildConfig.DEBUG,
+        settings = settings,
+        scope = scope,
+    )
+    val engine = ChatEngine(dao, models, settings, attachments, scope)
 }
 
 class NanoChatApp : Application() {
@@ -34,7 +47,7 @@ class NanoChatApp : Application() {
         graph.scope.launch {
             if (graph.dao.agentCount() == 0) graph.dao.insertAgents(starterAgents(System.currentTimeMillis()))
         }
-        graph.model.start()
+        graph.models.start()
     }
 }
 

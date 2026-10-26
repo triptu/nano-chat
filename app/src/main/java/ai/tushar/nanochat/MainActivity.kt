@@ -15,6 +15,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        graph.model.refresh()
+        graph.models.refresh()
     }
 }

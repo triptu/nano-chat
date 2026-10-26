@@ -56,6 +56,7 @@ dependencies {
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.mlkit.genai.prompt)
+    implementation(libs.litertlm.android)
     debugImplementation(libs.compose.ui.tooling)
 
     testImplementation(libs.junit)

@@ -93,7 +93,7 @@ private sealed interface Editing {
 fun AppRoot() {
     val graph = LocalContext.current.graph
     val devTools by graph.settings.devToolsEnabled.collectAsStateWithLifecycle(initialValue = true)
-    val model by graph.model.state.collectAsStateWithLifecycle()
+    val model by graph.models.state(ai.tushar.nanochat.model.ModelId.Nano).collectAsStateWithLifecycle(ModelState.Checking)
     val scope = rememberCoroutineScope()
 
     CompositionLocalProvider(LocalDevTools provides devTools) {
@@ -107,8 +107,8 @@ fun AppRoot() {
             } else {
                 ModelGate(
                     state = model,
-                    onDownload = graph.model::download,
-                    onRetry = graph.model::refresh,
+                    onDownload = { graph.models.download(ai.tushar.nanochat.model.ModelId.Nano) },
+                    onRetry = { graph.models.refresh() },
                     onUseFake = { scope.launch { graph.settings.setBackendChoice(BackendChoice.Fake) } },
                 )
             }
