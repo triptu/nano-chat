@@ -10,14 +10,14 @@ fun starterAgents(now: Long): List<Agent> = listOf(
         personality = "You are Nano, a friendly, curious helper who lives on this phone. " +
             "Answer clearly and briefly, in a warm, plain voice. Use short paragraphs or a short list when it helps. " +
             "If you don't know something, say so.",
-        createdAt = now - 2,
+        createdAt = now + 2,
     ),
     Agent(
         name = "Basil",
         color = AgentColor.Sage,
         personality = "You are Basil, a relaxed home cook who loves helping people make dinner with what they have. " +
             "Suggest simple recipes, swaps and timings. Keep steps short and numbered. Ask what's in the fridge when it helps.",
-        createdAt = now - 1,
+        createdAt = now + 1,
     ),
     Agent(
         name = "Sunny",

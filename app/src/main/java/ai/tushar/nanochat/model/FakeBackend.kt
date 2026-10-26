@@ -88,8 +88,9 @@ class FakeBackend(
             listOf("pep", "encourag", "upbeat").any { it in persona } -> PepReplies
             else -> HelperReplies
         }
-        val lastUser = request.prompt.lines().lastOrNull { it.startsWith("User:") }.orEmpty()
-        return pool[(lastUser.hashCode() xor random.nextInt()).mod(pool.size)]
+        val lastUser = request.prompt.lines().lastOrNull { it.startsWith("User:") }.orEmpty().lowercase()
+        val best = pool.maxBy { r -> r.keywords.count { it in lastUser } }
+        return if (best.keywords.any { it in lastUser }) best.text else pool[random.nextInt(pool.size)].text
     }
 }
 
@@ -98,27 +99,59 @@ internal fun estimateTokens(text: String): Int = if (text.isEmpty()) 0 else (tex
 /** Splits text into word-sized pieces that keep their spacing, so joining them restores the text. */
 internal fun splitTokens(text: String): List<String> = Regex("\\s*\\S+").findAll(text).map { it.value }.toList()
 
+private class Canned(val keywords: List<String>, val text: String)
+
+private fun c(vararg keywords: String, text: () -> String) = Canned(keywords.toList(), text())
+
 private val HelperReplies = listOf(
-    "Good question! The short version: it depends on what you want to optimise for.\n\n" +
-        "If you care most about speed, pick the simpler option and revisit it later. If you care about getting it right the first time, spend ten minutes writing down what \"done\" looks like before you start.\n\n" +
-        "Want me to help you sketch that list?",
-    "Here's how I'd think about it:\n\n1. Start with the one thing that's blocking you.\n2. Do the smallest version of it today.\n3. Check how it feels tomorrow before adding more.\n\nMost plans get easier once the first step is real.",
-    "Sure. In plain words: a cache keeps a copy of something you used recently, so the next time you ask for it, it comes back faster. The trade-off is that the copy can go stale, so caches usually forget things after a while.",
-    "I'm not totally sure about that one, and I'd rather not guess. I run fully on your phone, so I can't look things up online. If you can tell me a bit more, I'll do my best with what I know.",
-    "Happy to help! A quick summary:\n\n• Morning: deep work, phone in another room.\n• Afternoon: meetings and messages.\n• Evening: a short walk, then something fun.\n\nIt's simple, but simple is easy to keep.",
+    c("decide", "choose", "which", "option", "should i") {
+        "Good question! The short version: it depends on what you want to optimise for.\n\n" +
+            "If you care most about speed, pick the simpler option and revisit it later. If you care about getting it right the first time, spend ten minutes writing down what \"done\" looks like before you start.\n\n" +
+            "Want me to help you sketch that list?"
+    },
+    c("plan", "start", "stuck", "project", "goal") {
+        "Here's how I'd think about it:\n\n1. Start with the one thing that's blocking you.\n2. Do the smallest version of it today.\n3. Check how it feels tomorrow before adding more.\n\nMost plans get easier once the first step is real."
+    },
+    c("what is", "explain", "cache", "how does", "mean") {
+        "Sure. In plain words: a cache keeps a copy of something you used recently, so the next time you ask for it, it comes back faster. The trade-off is that the copy can go stale, so caches usually forget things after a while."
+    },
+    c("news", "today", "weather", "latest", "online") {
+        "I'm not totally sure about that one, and I'd rather not guess. I run fully on your phone, so I can't look things up online. If you can tell me a bit more, I'll do my best with what I know."
+    },
+    c("morning", "routine", "day", "schedule", "calm") {
+        "A calmer morning mostly comes down to fewer decisions before 9. Try this for a week:\n\n" +
+            "1. Lay out clothes and fill the kettle the night before.\n2. Keep your phone on the other side of the room until after breakfast.\n3. Ten quiet minutes with coffee, a window, or a short walk.\n4. Write the one thing that matters most today on a sticky note.\n\n" +
+            "Start with just one of these. Which feels easiest?"
+    },
 )
 
 private val CookReplies = listOf(
-    "Ooh, nice. With eggs, spinach and a bit of cheese you're one pan away from a frittata.\n\n" +
-        "1. Whisk 6 eggs with salt, pepper and a splash of milk.\n2. Wilt the spinach in an oven-safe pan with olive oil.\n3. Pour in the eggs, scatter the cheese, cook 4 minutes on the stove.\n4. Finish under the grill for 3 to 4 minutes until puffed.\n\nServe with toast. Leftovers are great cold the next day.",
-    "For a quick weeknight pasta: boil the water first, it's always the slow part.\n\nWhile it heats, fry two sliced garlic cloves in olive oil until just golden, add a pinch of chilli flakes and a tin of cherry tomatoes. Simmer ten minutes, toss with the pasta and a ladle of pasta water. Basil on top if you have it.",
-    "No buttermilk? Easy swap: stir a tablespoon of lemon juice or vinegar into a cup of milk and let it sit for five minutes. It'll thicken slightly and work just the same in pancakes or a marinade.",
-    "Rice tip that changed my life: rinse it until the water runs mostly clear, then use 1 part rice to 1.25 parts water. Bring to a boil, lid on, lowest heat for 12 minutes, then leave it alone for 10 more. Fluff with a fork. No peeking!",
+    c("egg", "spinach", "cheese", "breakfast", "fridge") {
+        "Ooh, nice. With eggs, spinach and a bit of cheese you're one pan away from a frittata.\n\n" +
+            "1. Whisk 6 eggs with salt, pepper and a splash of milk.\n2. Wilt the spinach in an oven-safe pan with olive oil.\n3. Pour in the eggs, scatter the cheese, cook 4 minutes on the stove.\n4. Finish under the grill for 3 to 4 minutes until puffed.\n\nServe with toast. Leftovers are great cold the next day."
+    },
+    c("pasta", "tomato", "garlic", "quick", "weeknight", "dinner") {
+        "For a quick weeknight pasta: boil the water first, it's always the slow part.\n\nWhile it heats, fry two sliced garlic cloves in olive oil until just golden, add a pinch of chilli flakes and a tin of cherry tomatoes. Simmer ten minutes, toss with the pasta and a ladle of pasta water. Basil on top if you have it."
+    },
+    c("buttermilk", "swap", "instead", "substitute", "milk") {
+        "No buttermilk? Easy swap: stir a tablespoon of lemon juice or vinegar into a cup of milk and let it sit for five minutes. It'll thicken slightly and work just the same in pancakes or a marinade."
+    },
+    c("rice", "fluffy", "sticky", "grain") {
+        "Rice tip that changed my life: rinse it until the water runs mostly clear, then use 1 part rice to 1.25 parts water. Bring to a boil, lid on, lowest heat for 12 minutes, then leave it alone for 10 more. Fluff with a fork. No peeking!"
+    },
 )
 
 private val PepReplies = listOf(
-    "Hey, you showed up, and that counts for a lot. Feeling stuck doesn't mean you're behind. It usually means you care about doing it well.\n\nSmall next step: set a timer for 15 minutes and work on just the first piece. You can stop when it rings.",
-    "That sounds like a lot to carry this week. You don't have to fix all of it today.\n\nPick the one thing that would make tomorrow lighter and do only that. Then do something nice for yourself, even if it's just a proper lunch away from the screen.",
-    "Honestly? You've handled harder things than this. Remember how unsure you felt before your last big launch, and it went fine.\n\nWrite down the three things you're most worried about. Seeing them on paper usually makes them smaller.",
-    "Love that you're trying something new! The first few tries are supposed to feel clumsy. That's what learning feels like from the inside.\n\nNext step: do one more practice round today and note one thing that went better than last time.",
+    c("stuck", "procrastinat", "can't start", "motivat") {
+        "Hey, you showed up, and that counts for a lot. Feeling stuck doesn't mean you're behind. It usually means you care about doing it well.\n\nSmall next step: set a timer for 15 minutes and work on just the first piece. You can stop when it rings."
+    },
+    c("tired", "overwhelm", "a lot", "stress", "busy", "week") {
+        "That sounds like a lot to carry this week. You don't have to fix all of it today.\n\nPick the one thing that would make tomorrow lighter and do only that. Then do something nice for yourself, even if it's just a proper lunch away from the screen."
+    },
+    c("nervous", "worried", "scared", "interview", "presentation", "launch") {
+        "Honestly? You've handled harder things than this. Remember how unsure you felt before your last big launch, and it went fine.\n\nWrite down the three things you're most worried about. Seeing them on paper usually makes them smaller."
+    },
+    c("new", "learning", "first time", "try", "practice") {
+        "Love that you're trying something new! The first few tries are supposed to feel clumsy. That's what learning feels like from the inside.\n\nNext step: do one more practice round today and note one thing that went better than last time."
+    },
 )
