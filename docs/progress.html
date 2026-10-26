@@ -35,6 +35,9 @@
   .shots img { width: 100%; display: block; border: 1px solid var(--line); }
   .shots figcaption { font-size: 13px; color: var(--muted); margin-top: 4px; }
   code { font-size: 14px; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--text); } td { color: var(--muted); } td:first-child { color: var(--text); white-space: nowrap; }
   .legend { display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 14px; margin: 14px 0 0; }
   .legend span::before { content: ""; display: inline-block; width: 4px; height: 14px; margin-right: 6px; vertical-align: -2px; background: var(--c); }
 </style>
@@ -42,12 +45,59 @@
 <body>
 <main>
 <h1>Nano Chat</h1>
-<p class="sub">An Android chat app that talks to Gemini Nano on the phone, with a list of companions like WhatsApp contacts. The release build from commit <code>7fa7153</code> is installed on the Galaxy Z Fold 7 and was tested there with the real model. You don't need to do anything unless you want to answer the open questions at the bottom.</p>
+<p class="sub">An Android chat app that talks to on-device models, with a list of companions like WhatsApp contacts. Each companion now runs on either Gemini Nano or Gemma 4 E4B, and Gemma also takes photos and voice notes. Everything is committed on <code>main</code>, and a release build is installed on the Galaxy Z Fold 7 with Gemma downloaded. Start with the comparison just below. You don't need to do anything unless you want to answer the open questions at the bottom.</p>
 <div class="legend">
   <span style="--c: var(--shipped)">Shipped</span>
   <span style="--c: var(--decision)">Decision (flip it if you want)</span>
   <span style="--c: var(--question)">Open question</span>
   <span style="--c: var(--issue)">Known issue</span>
+</div>
+
+<h2>Gemini Nano vs Gemma 4 E4B on the Fold</h2>
+<div class="entry shipped">
+  <h3>Same companion, same questions, two models</h3>
+  <p>Real phone (Galaxy Z Fold 7, Snapdragon 8 Elite, 12 GB), folded, dark mode, debug build from <code>main</code>. "Basil" runs on Gemini Nano (nano-v2 through ML Kit). "Basil (Gemma)" is an exact copy on Gemma 4 E4B through LiteRT-LM on the GPU. Both use temperature 0.7, top K 40 and at most 512 output tokens. The messages were sent with the debug receiver and the screenshots are the real app. Times are from the app's own log. RAM is PSS from <code>dumpsys meminfo</code>.</p>
+  <table>
+    <tr><th></th><th>Gemini Nano</th><th>Gemma 4 E4B (GPU)</th></tr>
+    <tr><td>Turn 1, first token</td><td>1.31 s</td><td>10.7 s cold, 8.8 s of it loading the model. The model normally starts loading when the chat opens ("waking up…"). I didn't time a first message sent after loading had finished.</td></tr>
+    <tr><td>Turns 2 and 3, first token</td><td>1.32 s, 1.43 s</td><td>0.31 s, 0.31 s. The model keeps the chat in memory and only reads the new message.</td></tr>
+    <tr><td>Writing speed</td><td>17 to 21 tok/s</td><td>31 to 38 tok/s, with multi-token prediction on</td></tr>
+    <tr><td>Reading speed (prefill)</td><td>not reported by ML Kit</td><td>385 tok/s on turn 1</td></tr>
+    <tr><td>Photo of a fridge, first token</td><td>2.93 s (one photo per message)</td><td>4.5 to 4.9 s for the first photo (loads the vision encoder), 1.6 s for the next one</td></tr>
+    <tr><td>7 s voice note, first token</td><td>not supported</td><td>1.00 s, 29 tok/s</td></tr>
+    <tr><td>RAM</td><td>App 0.18 GB, AICore 0.3 GB. The model itself lives in AICore's memory, which this doesn't fully show.</td><td>App 4.1 GB, or 4.7 to 4.8 GB after photos. About 3 GB of that is GPU memory for the weights. About 1 GB stays free on the phone.</td></tr>
+    <tr><td>Model load</td><td>managed by AICore, already loaded</td><td>8.8 to 15.3 s on the GPU, at every app start</td></tr>
+    <tr><td>Download</td><td>none (AICore)</td><td>3.66 GB, downloaded in the app in about 10 minutes on home Wi-Fi</td></tr>
+  </table>
+  <div class="shots">
+    <figure><img src="shots/fold_nano_t3.jpg" alt=""><figcaption>Nano, turns 2 and 3. Every reply is a forced five-item list, and "skip the oven step" never says how the eggs set.</figcaption></figure>
+    <figure><img src="shots/fold_gemma_chat_top.jpg" alt=""><figcaption>Gemma, turns 1 and 2. It asks what else is in the fridge, as Basil's personality says. Turn 1 assumed an oven, as a cook would.</figcaption></figure>
+    <figure><img src="shots/fold_gemma_chat_bottom.jpg" alt=""><figcaption>Gemma, turns 2 and 3. A real stovetop method (lid on for the centre), then sensible sides.</figcaption></figure>
+  </div>
+  <div class="shots">
+    <figure><img src="shots/fold_nano_photo.jpg" alt=""><figcaption>Nano with the fridge photo. Broccoli, zucchini, spinach and citrus are right; the red onion isn't there.</figcaption></figure>
+    <figure><img src="shots/fold_gemma_photo.jpg" alt=""><figcaption>Gemma with the same photo. Carrots, spinach and tomatoes are right; "peppers" are wrong, and it missed the eggplant and zucchini. It asks about protein first.</figcaption></figure>
+    <figure><img src="shots/fold_gemma_voice.jpg" alt=""><figcaption>Gemma with a 7 s voice note ("chicken thighs, a lemon and garlic"). It heard every item.</figcaption></figure>
+  </div>
+  <h3>My read on quality</h3>
+  <p>Gemma 4 E4B is clearly better for chat. It follows the personality: it asks what's in the fridge in every reply, it keeps its lists to real steps, and it adapts when told there is no oven-safe pan. Nano ignores the "only use a list for steps" rule every time, pads with lines like "Enjoy your dinner!", and gives no method for setting the eggs on the stove. Neither made a factual cooking mistake in this run, but Nano's run on this page last week suggested a roux for a frittata. On photos the two are closer than I expected. Each names about four items correctly and invents one. Gemma turns it into a better conversation, while Nano lists vegetables. Voice notes only work on Gemma, and the one I tried was understood perfectly. Gemma's cost is memory: it takes 4 to 5 GB of the phone's 12 GB, and Android killed the app twice during my tests (see Known issues).</p>
+</div>
+
+<div class="entry shipped">
+  <h3>The new screens</h3>
+  <p>The first five are from the real phone, release and debug builds. The emulator shots are the Pixel 9 Pro Fold emulator with the fake models, and they show the states the phone was already past: download progress, drafts and recording.</p>
+  <div class="shots">
+    <figure><img src="shots/fold_editor.jpg" alt=""><figcaption>Phone. Each companion picks its model. The faint status line under each model shows only with dev tools on.</figcaption></figure>
+    <figure><img src="shots/fold_gemma_internals.jpg" alt=""><figcaption>Phone. Chat internals: the model and GPU, prefill and decode speed, the 2,048-token budget, the real system instruction, and photos sent or left out.</figcaption></figure>
+    <figure><img src="shots/fold_nerds2.jpg" alt=""><figcaption>Phone. Nerds page, Gemma card: GPU, 10.3 s load, speculative decoding on, token limit, media support.</figcaption></figure>
+    <figure><img src="shots/fold_release_gemma.jpg" alt=""><figcaption>Phone, release build. A message typed in the real composer.</figcaption></figure>
+  </div>
+  <div class="shots wide">
+    <figure><img src="shots/emu_04-downloading.jpg" alt=""><figcaption>Emulator, fake model. The per-chat download screen with progress, Cancel, and a way back to Nano.</figcaption></figure>
+    <figure><img src="shots/emu_10-drafts.jpg" alt=""><figcaption>Emulator. The attach button, and photo drafts you can remove before sending.</figcaption></figure>
+    <figure><img src="shots/emu_15-recording.jpg" alt=""><figcaption>Emulator. Recording a voice note: tap to start, with cancel, stop and send.</figcaption></figure>
+    <figure><img src="shots/emu_27-nano-menu.jpg" alt=""><figcaption>Emulator. On a Nano companion the menu offers only Photo and Camera.</figcaption></figure>
+  </div>
 </div>
 
 <h2>Shipped</h2>
@@ -126,9 +176,30 @@
 <div class="entry decision"><h3>Emulator for UI work, the Fold only at the end</h3><p>All UI iteration ran on a Pixel 9 Pro Fold emulator I created, folded and unfolded. I left the shared phone emulator alone after another app came up on it. Debug builds include a broadcast receiver that sends a message without the keyboard, for scripted screenshots. It isn't in release builds.</p></div>
 <div class="entry decision"><h3>Package and release signing</h3><p>The package is <code>ai.tushar.nanochat</code> with minSdk 31. The release build is minified and signed with the debug key. ML Kit needed R8 keep rules, because its beta crashes on launch without them.</p></div>
 
+<div class="entry decision"><h3>Scope: only Gemma 4 E4B, plus multimodal input</h3><p>You narrowed the brief mid-run: Gemma 4 E2B and Qwen3 4B are out, and photo and voice note input is in. Neither dropped model had been downloaded, so there was nothing to delete.</p></div>
+<div class="entry decision"><h3>Gemma runs through LiteRT-LM 0.18.1, the latest stable</h3><p><code>com.google.ai.edge.litertlm:litertlm-android:0.18.1</code> from Google Maven, released 2026-10-20. The engine loads on the GPU and falls back to the CPU if the GPU fails. Photos go through the GPU vision encoder and voice notes through the CPU audio encoder, as in Google's AI Edge Gallery app. I tried the vision encoder on the CPU too. It used the same memory and wasn't faster. I didn't try the NPU: there is no Gemma 4 E4B build for the Fold's Snapdragon 8 Elite (SM8750) on Hugging Face.</p></div>
+<div class="entry decision"><h3>The 3.66 GB model file, downloaded in the app</h3><p>The Hugging Face repo <code>litert-community/gemma-4-E4B-it-litert-lm</code> is not gated, so the app downloads <code>gemma-4-E4B-it.litertlm</code> directly. No login or token is needed. This is the same file the Gallery app uses, and it includes the vision and audio encoders and multi-token prediction. A download can be cancelled and resumes where it stopped. The file goes in the app's external files folder, so <code>adb push</code> to the same path also works.</p></div>
+<div class="entry decision"><h3>Gemma gets a real system instruction and native multi-turn chat</h3><p>Nano needed the personality pasted into the prompt. Gemma takes it as a system instruction, and the earlier turns go in as real chat messages. Each chat keeps its live conversation, so on the next message the model already has the earlier turns in memory and only reads the new one. If the history changes (cleared, a turn dropped for space, another chat), the conversation is rebuilt from the saved messages. Gemma's thinking mode is off, so replies start right away.</p></div>
+<div class="entry decision"><h3>Context size is set per model: Gemma gets 2,048 tokens</h3><p>Nano keeps its 4,000-token input cap. Gemma's window is 2,048 tokens, input and output together, so about 1,500 tokens of chat history after the 512-token output cap. The model supports 32k, but each token of window costs about 180 KB of GPU memory. On the Fold, 8,192 got the app killed on the first reply, and 4,096 was killed once with other apps open. 2,048 ran every test cleanly. It's one number in <code>litert/LiteRtModels.kt</code>. See open question 1.</p></div>
+<div class="entry decision"><h3>Speculative decoding is on when the file supports it</h3><p>The app asks the model file whether it supports speculative decoding (Gemma 4's multi-token prediction) and turns it on if so. The dev tools show whether it's on.</p></div>
+<div class="entry decision"><h3>How many photos stay in the context</h3><p>Each photo goes to the model as a 768 px PNG at Gemma 4's 280-token setting, and the full-size copy stays for display. The newest message's photos and voice notes always go in. Older ones go in, newest first, until media would use more than 40% of the input budget, and at most 4 photos per request. Anything left out becomes a "[photo]" or "[voice note, 8 s]" marker, so the model knows it was there. With the 2,048-token window that's two photos at most, so in practice the newest photo plus one older one. Nano's Prompt API takes one image per request, so Nano sees only the newest photo and no audio. The internals sheet shows how many photos were sent and how many were left out.</p></div>
+<div class="entry decision"><h3>Voice notes: tap to record</h3><p>Tap the mic to start recording, then cancel, stop (keeps the note as a draft so you can add text) or send. Hold-to-record was the other option. Tap felt more reliable on a large screen, and it lets you add words before sending. Notes are 16 kHz mono WAV, up to 30 seconds, which is the format the Gallery app sends to Gemma. The microphone and camera permissions are asked for the first time you tap that option. If you deny one, a short line explains why and links to Settings.</p></div>
+<div class="entry decision"><h3>Nano gets photos too, but not voice notes</h3><p>ML Kit's Prompt API takes one image per request, and it worked on the Fold. So Nano companions get the attach button with Photo and Camera, and no Voice note. One fix was needed: ML Kit rejects a cached prompt prefix on requests with an image, so those requests skip the cache.</p></div>
+<div class="entry decision"><h3>How photos are stored</h3><p>Photos and voice notes are saved in the app's private storage, never in shared storage, and listed in a new database table, so existing chats survived the upgrade. Each photo is saved twice: a full-size copy for the chat and a 768 px PNG for the model. Clearing a chat or deleting a companion also deletes its files. Tap a photo to view it full screen.</p></div>
+<div class="entry decision"><h3>The download screen moved into the chat</h3><p>The whole app used to wait behind Nano's gate. Now the list always shows, and a chat whose model isn't ready shows the mascot download screen in its place, with size, progress and cancel. It also has a link to switch that companion to the other model.</p></div>
+<div class="entry decision"><h3>Global default stays Gemini Nano</h3><p>New companions use Nano unless you pick Gemma, so nobody has to download 3.66 GB before their first chat. You can change the default on the nerds page.</p></div>
+
 <h2>Open questions</h2>
 <div class="entry question">
-  <h3>1. How hard to push reply quality on nano-v2</h3>
+  <h3>1. Gemma's context: 2,048 tokens or 4,096</h3>
+  <p>At 2,048, Gemma remembers about the last 6 to 8 short messages and at most two photos. At 4,096 it would remember twice as much and use about 0.4 GB more, and the app was killed once at that size with other apps open. My pick is to stay at 2,048 until Android can kill the app without losing the reply: unload Gemma when the app goes to the background, and show "Try again" after a restart. Then try 4,096.</p>
+</div>
+<div class="entry question">
+  <h3>2. Should Gemma be the default for new companions?</h3>
+  <p>It replies better and faster once loaded. The costs are a 3.66 GB download, about 10 s of loading each time the app starts, and 4 to 5 GB of RAM. My pick is to keep Nano as the default and suggest Gemma in the editor. Flip it on the nerds page if you want everything on Gemma.</p>
+</div>
+<div class="entry question">
+  <h3>3. How hard to push reply quality on nano-v2</h3>
   <p>The Fold 7 runs nano-v2. Its replies are short, sometimes wrong (it suggested a roux for a frittata), and it drifts back to old topics: when told "that's all I needed", Basil replied with a full recipe. Options:</p>
   <ul>
     <li>(a) Lower the default temperature to about 0.4.</li>
@@ -139,7 +210,10 @@
 </div>
 
 <h2>Known issues</h2>
-<div class="entry issue"><h3>Model quality</h3><p>See open question 1. One reply also started with a stray "1.".</p></div>
+<div class="entry issue"><h3>Android can kill the app while Gemma is loaded</h3><p>Gemma takes 4 to 5 GB, which leaves about 1 GB free on the Fold. Twice during testing, with a larger window and other apps open, Android's low-memory killer stopped Nano Chat in the middle of a reply. When that happens, your message stays in the chat without a reply, and you have to send it again (there's no "Try again" on the next start). The app then reloads the model, which takes about 10 seconds, and rebuilds the chat (4.6 s to the first token in the release test, because two old photos were read again).</p></div>
+<div class="entry issue"><h3>Downloads run only while the app is open</h3><p>The 3.66 GB download runs inside the app, not as a background job. If Android closes the app, the download stops. It resumes from where it stopped the next time you tap Download.</p></div>
+<div class="entry issue"><h3>Not measured</h3><p>The token cost of voice notes is estimated at 25 tokens per second; I didn't measure it. TalkBack, large fonts, the unfolded inner screen with Gemma, and a voice note recorded on the real mic were not checked. The test note was made with macOS text to speech and sent through the debug receiver, and recording was checked only on the emulator.</p></div>
+<div class="entry issue"><h3>Nano reply quality</h3><p>See open question 3. One reply also started with a stray "1.".</p></div>
 <div class="entry issue"><h3>Not checked on the real phone</h3><p>The cover screen (the phone stayed unfolded) and light mode (the phone was in dark mode).</p></div>
 <div class="entry issue"><h3>Not checked anywhere</h3><p>A full TalkBack walk, 200% font size, and a 320 dp width. The review fixes for these are in: speaker labels on bubbles, live regions, labelled switches and sliders, and wrapping colour swatches.</p></div>
 <div class="entry issue"><h3>Prefix caching showed no speed gain</h3><p>The first token took 1.2 to 1.5 s with or without the cached prefix, but the prompts were short (100 to 280 tokens). It may matter in long chats.</p></div>
