@@ -6,5 +6,10 @@
                 <action android:name="ai.tushar.nanochat.debug.SEND" />
             </intent-filter>
         </receiver>
+        <receiver android:name=".DebugModelReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="ai.tushar.nanochat.debug.MODEL" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>
