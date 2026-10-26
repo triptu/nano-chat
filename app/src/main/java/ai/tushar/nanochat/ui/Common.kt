@@ -47,6 +47,13 @@ object Icons {
     @DrawableRes val Close = R.drawable.ic_x
     @DrawableRes val Check = R.drawable.ic_check
     @DrawableRes val Download = R.drawable.ic_download_simple
+    @DrawableRes val Attach = R.drawable.ic_plus
+    @DrawableRes val Photo = R.drawable.ic_image
+    @DrawableRes val Camera = R.drawable.ic_camera
+    @DrawableRes val Mic = R.drawable.ic_microphone
+    @DrawableRes val Play = R.drawable.ic_play_fill
+    @DrawableRes val Pause = R.drawable.ic_pause_fill
+    @DrawableRes val Waveform = R.drawable.ic_waveform
 }
 
 @Composable
