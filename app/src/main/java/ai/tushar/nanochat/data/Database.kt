@@ -15,7 +15,10 @@ import androidx.room3.Query
 import androidx.room3.Room
 import androidx.room3.RoomDatabase
 import androidx.room3.Update
+import androidx.room3.migration.Migration
+import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 
@@ -69,6 +72,7 @@ data class Generation(
     val systemPrompt: String,
     val prompt: String,
     val usedSystemInstruction: Boolean,
+    @ColumnInfo(defaultValue = "0") val usedPrefixCache: Boolean = false,
     val inputTokens: Int,
     val inputBudget: Int,
     val includedTurns: Int,
@@ -167,7 +171,13 @@ interface ChatDao {
     fun messageCount(): Flow<Int>
 }
 
-@Database(entities = [Agent::class, Message::class, Generation::class], version = 1, exportSchema = false)
+private object AddPrefixCacheColumn : Migration(1, 2) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE generations ADD COLUMN usedPrefixCache INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+@Database(entities = [Agent::class, Message::class, Generation::class], version = 2, exportSchema = false)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
 
@@ -175,6 +185,7 @@ abstract class ChatDatabase : RoomDatabase() {
         fun open(context: Context): ChatDatabase =
             Room.databaseBuilder<ChatDatabase>(context, context.getDatabasePath("nano-chat.db").absolutePath)
                 .setDriver(BundledSQLiteDriver())
+                .addMigrations(AddPrefixCacheColumn)
                 .setQueryCoroutineContext(Dispatchers.IO)
                 .build()
     }

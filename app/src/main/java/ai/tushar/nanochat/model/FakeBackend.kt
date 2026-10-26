@@ -56,6 +56,7 @@ class FakeBackend(
     override suspend fun warmup() = delay(250)
     override suspend fun tokenLimit(): Int = 4096
     override suspend fun supportsSystemPrompt(): Boolean = true
+    override suspend fun supportsPrefixCaching(): Boolean = false
     override suspend fun countTokens(systemPrompt: String?, prompt: String): Int = estimateTokens(systemPrompt.orEmpty()) + estimateTokens(prompt)
 
     override fun generate(request: GenerateRequest): Flow<GenerateChunk> = flow {
@@ -82,7 +83,7 @@ class FakeBackend(
     override suspend fun info() = BackendInfo(baseModelName = "fake-nano", cachingAvailable = false, aicoreVersion = null)
 
     private fun pickReply(request: GenerateRequest): String {
-        val persona = (request.systemPrompt ?: request.prompt).lowercase()
+        val persona = (request.systemPrompt ?: (request.promptPrefix.orEmpty() + request.prompt)).lowercase()
         val pool = when {
             listOf("cook", "recipe", "dinner").any { it in persona } -> CookReplies
             listOf("pep", "encourag", "upbeat").any { it in persona } -> PepReplies

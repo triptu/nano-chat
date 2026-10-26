@@ -34,11 +34,15 @@ class PromptWindow(private val agentName: String, private val userName: String) 
     fun systemPrompt(personality: String): String = buildString {
         append(personality.trim())
         if (userName.isNotBlank()) append("\nYou are chatting with ${userName.trim()}.")
-        append("\nReply as $agentName with just your next message. Don't write the other person's lines.")
+        append("\nReply as $agentName with just your next message: 2 to 5 friendly, specific sentences. Use a numbered list only for step-by-step instructions.")
+        append(" Don't write the other person's lines.")
     }
 
+    /** The instructions block that starts the prompt when the model has no system instructions. */
+    fun instructions(systemPrompt: String): String = "## Instructions\n$systemPrompt\n\n"
+
     fun render(systemPrompt: String, chronological: List<Turn>, inlineSystem: Boolean): String = buildString {
-        if (inlineSystem) append("## Instructions\n").append(systemPrompt).append("\n\n")
+        if (inlineSystem) append(instructions(systemPrompt))
         append("## Conversation\n")
         for (turn in chronological) {
             append(if (turn.role == Role.User) "User" else agentName).append(": ").append(turn.text.trim()).append('\n')

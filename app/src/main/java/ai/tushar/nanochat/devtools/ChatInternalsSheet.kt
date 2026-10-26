@@ -81,7 +81,14 @@ fun ChatInternalsSheet(generation: Generation?, info: ModelInfo, onDismiss: () -
             )
             Fact("Finish reason", generation.finishReason ?: "none")
             generation.error?.let { Fact("Error", it) }
-            Fact("System prompt", if (generation.usedSystemInstruction) "sent as a system instruction" else "inlined into the prompt (model has no system instructions)")
+            Fact(
+                "System prompt",
+                when {
+                    generation.usedSystemInstruction -> "sent as a system instruction"
+                    generation.usedPrefixCache -> "at the start of the prompt, sent as a cached prefix (model has no system instructions)"
+                    else -> "at the start of the prompt (model has no system instructions)"
+                },
+            )
             if (generation.usedSystemInstruction) Raw("System instruction", generation.systemPrompt)
             Raw("Prompt", generation.prompt)
         }

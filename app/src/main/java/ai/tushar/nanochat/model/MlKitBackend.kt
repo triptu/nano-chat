@@ -6,6 +6,7 @@ import com.google.mlkit.genai.common.FeatureStatus
 import com.google.mlkit.genai.common.GenAiException
 import com.google.mlkit.genai.prompt.Candidate
 import com.google.mlkit.genai.prompt.Generation
+import com.google.mlkit.genai.prompt.PromptPrefix
 import com.google.mlkit.genai.prompt.SystemInstruction
 import com.google.mlkit.genai.prompt.TextPart
 import com.google.mlkit.genai.prompt.generateContentRequest
@@ -42,6 +43,7 @@ class MlKitBackend(private val context: Context) : ModelBackend {
     override suspend fun warmup() = wrap { client.warmup() }
     override suspend fun tokenLimit(): Int = wrap { client.getTokenLimit() }
     override suspend fun supportsSystemPrompt(): Boolean = runCatching { client.isSystemPromptAvailable() }.getOrDefault(false)
+    override suspend fun supportsPrefixCaching(): Boolean = runCatching { client.isCachingFeatureAvailable() }.getOrDefault(false)
 
     override suspend fun countTokens(systemPrompt: String?, prompt: String): Int = wrap {
         val req = if (systemPrompt != null) generateContentRequest(SystemInstruction(systemPrompt), TextPart(prompt)) {}
@@ -54,6 +56,7 @@ class MlKitBackend(private val context: Context) : ModelBackend {
             temperature = request.temperature
             topK = request.topK
             maxOutputTokens = request.maxOutputTokens
+            request.promptPrefix?.let { promptPrefix = PromptPrefix(it) }
         }
         val req = if (request.systemPrompt != null) {
             generateContentRequest(SystemInstruction(request.systemPrompt), TextPart(request.prompt), configure)

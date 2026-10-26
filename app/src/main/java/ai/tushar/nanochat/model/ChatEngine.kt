@@ -102,6 +102,7 @@ class ChatEngine(
 
         val window = PromptWindow(agent.name, settings.displayName.first())
         val useSystem = backend.supportsSystemPrompt()
+        val useCache = !useSystem && backend.supportsPrefixCaching()
         val started = now()
         val clock = TimeSource.Monotonic.markNow()
 
@@ -119,14 +120,16 @@ class ChatEngine(
         var finish: String? = null
         var error: String? = null
         var hitNextTurn = false
+        val prefix = window.instructions(plan.systemPrompt).takeIf { useCache && plan.prompt.startsWith(it) }
         val request = GenerateRequest(
             systemPrompt = plan.systemPrompt.takeIf { plan.useSystemInstruction },
-            prompt = plan.prompt,
+            prompt = if (prefix != null) plan.prompt.removePrefix(prefix) else plan.prompt,
+            promptPrefix = prefix,
             temperature = params.temperature,
             topK = params.topK,
             maxOutputTokens = params.maxOutputTokens,
         )
-        fun record() = Record(agentId, agent.name, out.toString(), firstTokenMs, clock.elapsedNow().inWholeMilliseconds, plan, params, finish, error, started, backend)
+        fun record() = Record(agentId, agent.name, out.toString(), firstTokenMs, clock.elapsedNow().inWholeMilliseconds, plan, params, finish, error, started, backend, prefix != null)
         try {
             backend.generate(request).takeWhile { !hitNextTurn }.collect { chunk ->
                 if (chunk.text.isNotEmpty()) {
@@ -159,6 +162,7 @@ class ChatEngine(
         val agentId: Long, val agentName: String, val raw: String, val ttft: Long?, val totalMs: Long,
         val plan: PromptPlan, val params: GenerationParams, val finish: String?, val error: String?, val started: Long,
         val backend: ModelBackend,
+        val usedPrefixCache: Boolean,
     )
 
     private suspend fun save(r: Record) {
@@ -177,7 +181,7 @@ class ChatEngine(
         dao.insertGeneration(
             Generation(
                 agentId = r.agentId, startedAt = r.started, backend = r.backend.kind.name,
-                systemPrompt = r.plan.systemPrompt, prompt = r.plan.prompt, usedSystemInstruction = r.plan.useSystemInstruction,
+                systemPrompt = r.plan.systemPrompt, prompt = r.plan.prompt, usedSystemInstruction = r.plan.useSystemInstruction, usedPrefixCache = r.usedPrefixCache,
                 inputTokens = r.plan.inputTokens, inputBudget = r.plan.budget,
                 includedTurns = r.plan.includedTurns, droppedTurns = r.plan.droppedTurns,
                 temperature = r.params.temperature, topK = r.params.topK, maxOutputTokens = r.params.maxOutputTokens,

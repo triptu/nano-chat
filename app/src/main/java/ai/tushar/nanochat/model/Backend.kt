@@ -18,6 +18,8 @@ data class GenerateRequest(
     val temperature: Float,
     val topK: Int,
     val maxOutputTokens: Int,
+    /** Fixed start of the prompt the model may cache between requests; [prompt] is the part after it. */
+    val promptPrefix: String? = null,
 )
 
 /** One streamed piece of a reply. [finishReason] is set on the last chunk only. */
@@ -45,6 +47,7 @@ interface ModelBackend {
     suspend fun warmup()
     suspend fun tokenLimit(): Int
     suspend fun supportsSystemPrompt(): Boolean
+    suspend fun supportsPrefixCaching(): Boolean
     suspend fun countTokens(systemPrompt: String?, prompt: String): Int
     fun generate(request: GenerateRequest): Flow<GenerateChunk>
     suspend fun info(): BackendInfo
