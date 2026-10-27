@@ -25,9 +25,11 @@ Gemini Nano is the default. It needs no download in the app and costs the app no
 
 The default model has a switch on the profile page. Each companion can pick its own model in its edit sheet, and a chat whose model isn't ready shows the download in its place.
 
-## Install and build
+## Install
 
-Nano Chat needs Android 12 or later. There is no store listing yet, so build it yourself with Android Studio or the command line.
+Nano Chat needs Android 12 or later. On the phone, download [nano-chat.apk](https://github.com/triptu/nano-chat/releases/latest/download/nano-chat.apk), the newest release, and open it. Android asks once to allow installs from your browser or files app. It isn't on Play yet. Each [release](https://github.com/triptu/nano-chat/releases) lists the APK's SHA-256 and its signing certificate, so you can check what you install. A newer APK installs over the old one and keeps your chats.
+
+### Build from source
 
 ```bash
 ./gradlew :app:installDebug        # a debug build onto a connected phone
@@ -81,7 +83,3 @@ Turning on Use this phone gives a companion access to whatever you allow in Hand
 ## Developer tools
 
 A switch on the profile page, on by default, shows speed under each reply, the exact prompt behind a chat, each companion's model settings, and a stats page with a card per model. The stats page can also force the real or the fake model. [docs/development.md](docs/development.md) covers the adb helpers for scripted tests, and [docs/progress.html](docs/progress.html) is the decision log, with measurements on a real phone.
-
-## License
-
-MIT, in [LICENSE](LICENSE). The app bundles the Nunito typeface (SIL Open Font License 1.1) and Phosphor Icons (MIT), with their licences in `app/src/main/assets/licenses`. Gemini Nano and Gemma 4 E4B are Google's models under their own terms, and neither is in this repository.
