@@ -13,7 +13,23 @@ import ai.tushar.nanochat.model.ModelBackend
 import ai.tushar.nanochat.model.ModelErrorKind
 import ai.tushar.nanochat.model.ModelException
 import ai.tushar.nanochat.model.RunStats
+import ai.tushar.nanochat.model.ToolSpec
+import ai.tushar.nanochat.model.ToolTurn
 import ai.tushar.nanochat.model.Turn
+import ai.tushar.nanochat.handset.ToolRequest
+import com.google.ai.edge.litertlm.OpenApiTool
+import com.google.ai.edge.litertlm.ToolCall
+import com.google.ai.edge.litertlm.tool
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
+import kotlinx.serialization.json.put
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litertlm.Backend
@@ -55,6 +71,8 @@ private const val TopP = 0.95
 class LiteRtBackend(context: Context, private val spec: LiteRtSpec) : ModelBackend {
     override val kind = BackendKind.Real
     override val nativeChat = true
+    /** Gemma 4's chat template has tool declarations, calls and responses; LiteRT-LM hands the calls back unrun. */
+    override val nativeTools = true
     override val heavy = true
     override val downloadBytes = spec.bytes
     override val media = MediaSupport(
@@ -80,7 +98,9 @@ class LiteRtBackend(context: Context, private val spec: LiteRtSpec) : ModelBacke
     /** What the live conversation holds, oldest first, including the model's own replies. */
     private var conversationTurns: List<Turn> = emptyList()
 
-    private data class ConversationKey(val chat: Long, val system: String?, val temperature: Float, val topK: Int, val maxOutput: Int)
+    private data class ConversationKey(
+        val chat: Long, val system: String?, val temperature: Float, val topK: Int, val maxOutput: Int, val tools: List<ToolSpec>,
+    )
 
     private fun complete(): Boolean = modelFile.isFile && modelFile.length() == spec.bytes
 
@@ -123,17 +143,23 @@ class LiteRtBackend(context: Context, private val spec: LiteRtSpec) : ModelBacke
             val e = ensureEngine()
             val turns = request.turns
             require(turns.isNotEmpty() && turns.last().role == Role.User) { "turns must end with the user's message" }
-            val key = ConversationKey(request.chatKey, request.systemPrompt, request.temperature, request.topK, request.maxOutputTokens)
+            val key = ConversationKey(request.chatKey, request.systemPrompt, request.temperature, request.topK, request.maxOutputTokens, request.tools)
             val history = turns.dropLast(1)
             val conv = conversation.takeIf { conversationKey == key && sameTurns(conversationTurns, history) }
                 ?: openConversation(e, key, request, history)
             val reply = StringBuilder()
+            val calls = mutableListOf<ToolRequest>()
             try {
-                conv.sendMessageAsync(Message.user(contentsOf(turns.last()))).collect { m ->
+                conv.sendMessageAsync(messageOf(turns.last())).collect { m ->
                     val text = m.toString()
                     if (text.isNotEmpty()) {
                         reply.append(text)
                         emit(GenerateChunk(text, null))
+                    }
+                    if (m.toolCalls.isNotEmpty()) {
+                        val requests = m.toolCalls.map { ToolRequest(it.name, toJson(it.arguments)) }
+                        calls += requests
+                        emit(GenerateChunk("", null, toolCalls = requests))
                     }
                 }
             } catch (c: CancellationException) {
@@ -144,7 +170,7 @@ class LiteRtBackend(context: Context, private val spec: LiteRtSpec) : ModelBacke
                 closeConversation()
                 throw ModelException(ModelErrorKind.Other, null, "LITERT_ERROR", t.message)
             }
-            conversationTurns = turns + Turn(Role.Agent, reply.toString().trim())
+            conversationTurns = turns + Turn(Role.Agent, reply.toString().trim(), tool = calls.firstOrNull()?.let(ToolTurn::Call))
             val stats = runCatching { conv.getBenchmarkInfo() }.getOrNull()?.let {
                 RunStats(
                     prefillTokensPerSecond = it.lastPrefillTokensPerSecond.toFloat().takeIf { v -> v > 0 },
@@ -171,11 +197,14 @@ class LiteRtBackend(context: Context, private val spec: LiteRtSpec) : ModelBacke
         val conv = e.createConversation(
             ConversationConfig(
                 systemInstruction = request.systemPrompt?.let { Contents.of(it) },
-                initialMessages = history.map { t -> if (t.role == Role.User) Message.user(contentsOf(t)) else Message.model(t.text) },
+                initialMessages = history.map(::messageOf),
                 samplerConfig = SamplerConfig(topK = request.topK, topP = TopP, temperature = request.temperature.toDouble()),
                 maxOutputToken = request.maxOutputTokens,
                 // Chat replies should start right away; Gemma 4's thinking mode would add a long silent pause.
                 thinkingConfig = ThinkingConfig(enableThinking = false),
+                tools = request.tools.map { tool(DeclaredTool(it)) },
+                // The app runs each call through Handset itself, so it can show and limit them.
+                automaticToolCalling = false,
             ),
         )
         conversation = conv
@@ -239,6 +268,48 @@ class LiteRtBackend(context: Context, private val spec: LiteRtSpec) : ModelBacke
     }
 }
 
+/** A turn as LiteRT-LM's message: a tool's result, the model's call, or plain text and media. */
+private fun messageOf(turn: Turn): Message = when (val tool = turn.tool) {
+    is ToolTurn.Result -> Message.tool(Contents.of(listOf(Content.ToolResponse(tool.tool, turn.text))))
+    is ToolTurn.Call -> Message.model(
+        if (turn.text.isBlank()) Contents.of(emptyList()) else Contents.of(turn.text),
+        toolCalls = listOf(ToolCall(tool.request.tool, fromJson(tool.request.arguments))),
+    )
+    null -> if (turn.role == Role.User) Message.user(contentsOf(turn)) else Message.model(turn.text)
+}
+
+/** A tool declared to the model. [execute] never runs: automatic tool calling is off. */
+private class DeclaredTool(private val spec: ToolSpec) : OpenApiTool {
+    override fun getToolDescriptionJsonString(): String = buildJsonObject {
+        put("name", spec.name)
+        put("description", spec.description)
+        put("parameters", spec.parameters)
+    }.toString()
+
+    override fun execute(paramsJsonString: String): String = error("Tools run through Handset, not LiteRT-LM")
+}
+
+private fun toJson(value: Any?): JsonElement = when (value) {
+    null -> JsonNull
+    is JsonElement -> value
+    is Boolean -> JsonPrimitive(value)
+    is Number -> JsonPrimitive(value)
+    is Map<*, *> -> JsonObject(value.entries.associate { (k, v) -> k.toString() to toJson(v) })
+    is Iterable<*> -> JsonArray(value.map(::toJson))
+    else -> JsonPrimitive(value.toString())
+}
+
+private fun toJson(arguments: Map<String, Any?>): JsonObject = JsonObject(arguments.mapValues { toJson(it.value) })
+
+private fun fromJson(e: JsonElement): Any? = when (e) {
+    JsonNull -> null
+    is JsonPrimitive -> if (e.isString) e.content else e.booleanOrNull ?: e.longOrNull ?: e.doubleOrNull ?: e.content
+    is JsonObject -> e.mapValues { fromJson(it.value) }
+    is JsonArray -> e.map(::fromJson)
+}
+
+private fun fromJson(o: JsonObject): Map<String, Any?> = o.mapValues { fromJson(it.value) }
+
 /** Photos and voice notes first, then the text, as the Gemma chat template expects. */
 private fun contentsOf(turn: Turn): Contents {
     val parts = buildList {
@@ -250,4 +321,4 @@ private fun contentsOf(turn: Turn): Contents {
 }
 
 private fun sameTurns(a: List<Turn>, b: List<Turn>): Boolean =
-    a.size == b.size && a.zip(b).all { (x, y) -> x.role == y.role && x.text.trim() == y.text.trim() && x.media == y.media }
+    a.size == b.size && a.zip(b).all { (x, y) -> x.role == y.role && x.text.trim() == y.text.trim() && x.media == y.media && x.tool == y.tool }

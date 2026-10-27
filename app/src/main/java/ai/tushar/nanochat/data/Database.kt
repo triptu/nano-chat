@@ -13,6 +13,7 @@ import androidx.room3.Insert
 import androidx.room3.PrimaryKey
 import androidx.room3.Query
 import androidx.room3.Room
+import androidx.room3.Transaction
 import androidx.room3.RoomDatabase
 import androidx.room3.Update
 import androidx.room3.migration.Migration
@@ -35,6 +36,8 @@ data class Agent(
     val createdAt: Long,
     /** [ai.tushar.nanochat.model.ModelId] name; null means "use the default model from the nerds page". */
     @ColumnInfo(defaultValue = "NULL") val model: String? = null,
+    /** "Use this phone": the companion may call Handset's tools. */
+    @ColumnInfo(defaultValue = "0") val useHandset: Boolean = false,
 )
 
 /** Colors an agent can wear. Stored by name so the palette can be retuned without a migration. */
@@ -83,6 +86,35 @@ data class Attachment(
     val height: Int? = null,
     val durationMs: Long? = null,
 )
+
+/**
+ * One Handset tool a reply called, shown as a line under the reply. [result] is what came back (kept up to
+ * [ToolStep.MaxResultChars]); the model was sent its first [sentChars] characters.
+ */
+@Entity(
+    tableName = "tool_steps",
+    foreignKeys = [ForeignKey(entity = Message::class, parentColumns = ["id"], childColumns = ["messageId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("messageId")],
+)
+data class ToolStep(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val messageId: Long,
+    val position: Int,
+    val tool: String,
+    /** The call's arguments as JSON. */
+    val arguments: String,
+    val label: String,
+    /** [ai.tushar.nanochat.handset.StepOutcome] name. */
+    val outcome: String,
+    val result: String,
+    val sentChars: Int,
+) {
+    val cut: Boolean get() = sentChars < result.length
+
+    companion object {
+        const val MaxResultChars = 20_000
+    }
+}
 
 /** One call to the model, kept for the dev tools' internals sheet and stats page. */
 @Entity(
@@ -189,6 +221,13 @@ interface ChatDao {
     suspend fun agentsAwaitingReply(): List<Agent>
 
     @Insert suspend fun insertMessage(message: Message): Long
+
+    @Transaction
+    suspend fun insertReply(message: Message, steps: List<ToolStep>): Long {
+        val id = insertMessage(message)
+        if (steps.isNotEmpty()) insertToolSteps(steps.mapIndexed { i, s -> s.copy(messageId = id, position = i) })
+        return id
+    }
     @Insert suspend fun insertMessages(messages: List<Message>)
 
     @Query("DELETE FROM messages WHERE agentId = :agentId")
@@ -230,6 +269,11 @@ interface ChatDao {
 
     @Query("SELECT COUNT(*) FROM messages")
     fun messageCount(): Flow<Int>
+
+    @Insert suspend fun insertToolSteps(steps: List<ToolStep>)
+
+    @Query("SELECT s.* FROM tool_steps s JOIN messages m ON m.id = s.messageId WHERE m.agentId = :agentId ORDER BY s.messageId, s.position")
+    fun toolSteps(agentId: Long): Flow<List<ToolStep>>
 }
 
 private object AddPrefixCacheColumn : Migration(1, 2) {
@@ -261,7 +305,20 @@ private object AddModelsAndAttachments : Migration(2, 3) {
     }
 }
 
-@Database(entities = [Agent::class, Message::class, Generation::class, Attachment::class], version = 3, exportSchema = false)
+private object AddHandset : Migration(3, 4) {
+    override suspend fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("ALTER TABLE agents ADD COLUMN useHandset INTEGER NOT NULL DEFAULT 0")
+        connection.execSQL(
+            "CREATE TABLE IF NOT EXISTS tool_steps (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, messageId INTEGER NOT NULL, " +
+                "position INTEGER NOT NULL, tool TEXT NOT NULL, arguments TEXT NOT NULL, label TEXT NOT NULL, outcome TEXT NOT NULL, " +
+                "result TEXT NOT NULL, sentChars INTEGER NOT NULL, " +
+                "FOREIGN KEY(messageId) REFERENCES messages(id) ON UPDATE NO ACTION ON DELETE CASCADE)",
+        )
+        connection.execSQL("CREATE INDEX IF NOT EXISTS index_tool_steps_messageId ON tool_steps (messageId)")
+    }
+}
+
+@Database(entities = [Agent::class, Message::class, Generation::class, Attachment::class, ToolStep::class], version = 4, exportSchema = false)
 abstract class ChatDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
 
@@ -269,7 +326,7 @@ abstract class ChatDatabase : RoomDatabase() {
         fun open(context: Context): ChatDatabase =
             Room.databaseBuilder<ChatDatabase>(context, context.getDatabasePath("nano-chat.db").absolutePath)
                 .setDriver(BundledSQLiteDriver())
-                .addMigrations(AddPrefixCacheColumn, AddModelsAndAttachments)
+                .addMigrations(AddPrefixCacheColumn, AddModelsAndAttachments, AddHandset)
                 .setQueryCoroutineContext(Dispatchers.IO)
                 .build()
     }

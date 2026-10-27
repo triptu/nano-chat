@@ -86,7 +86,7 @@ class FakeBackend(
             FakeScenario.LoadFails -> throw ModelException(ModelErrorKind.NotReady, null, "LOAD_FAILED", "Fake: engine failed to load")
             else -> Unit
         }
-        val reply = mediaReply(request) ?: pickReply(request)
+        val reply = toolReply(request) ?: mediaReply(request) ?: pickReply(request)
         val tokens = splitTokens(reply)
         val limited = tokens.take(request.maxOutputTokens)
         delay(pace.firstTokenMs.random(random).toLong())
@@ -104,6 +104,56 @@ class FakeBackend(
         accelerator = if (model == ModelId.Nano) null else "GPU",
         loadMs = if (model == ModelId.Nano) null else 250,
     )
+
+    /**
+     * A scripted phone step, so the tool loop can be tried without a real model. When the prompt offers tools, a message
+     * like "Search my phone for Toit and open Maps" gets one call per thing asked, in order, then a line built from
+     * what came back.
+     */
+    private fun toolReply(request: GenerateRequest): String? {
+        val system = request.systemPrompt ?: (request.promptPrefix.orEmpty() + request.prompt)
+        if ("You can use this phone through tools" !in system) return null
+        val sinceUser = request.prompt.substringAfterLast("\nUser: ", missingDelimiterValue = "")
+        val asked = sinceUser.lineSequence().firstOrNull().orEmpty()
+        val rounds = sinceUser.split("\n$PhoneSpeaker: ").drop(1)
+        val wanted = scriptedCalls(asked)
+        wanted.getOrNull(rounds.size)?.let { return it }
+        if (rounds.isEmpty()) return null
+        return rounds.zip(wanted).joinToString(" ") { (round, call) -> describeRound(call, round) }
+    }
+
+    /** What the user's message asks the phone for, as calls in the order asked. */
+    private fun scriptedCalls(message: String): List<String> {
+        val found = mutableListOf<Pair<Int, String>>()
+        Regex("(?i)\\b(?:search|find|look for|look up)(?: my phone)?(?: for)? (.+?)(?= and |[.?!]|$)").find(message)?.let {
+            found += it.range.first to call("search_context", "query", it.groupValues[1].trim().trim('"', '“', '”'))
+        }
+        Regex("(?i)\\bopen (?:the )?(.+?)(?: app)?(?= and |[.?!]|$)").find(message)?.let {
+            found += it.range.first to call("open_app", "app", it.groupValues[1].trim())
+        }
+        if (Regex("(?i)\\b(battery|phone status)\\b").containsMatchIn(message)) found += message.length to """{"tool":"device_status","arguments":{}}"""
+        return found.sortedBy { it.first }.map { it.second }
+    }
+
+    private fun call(tool: String, key: String, value: String) =
+        """{"tool":"$tool","arguments":{"$key":"${value.replace("\\", "").replace("\"", "")}"}}"""
+
+    /** One sentence about one tool round, from the result text in the prompt. */
+    private fun describeRound(call: String, round: String): String {
+        val tool = Regex("\"tool\":\"(\\w+)\"").find(call)?.groupValues?.get(1)
+        val value = Regex("\"arguments\":\\{\"\\w+\":\"([^\"]*)\"").find(call)?.groupValues?.get(1).orEmpty()
+        val lines = round.lines().drop(1).filter { l ->
+            l.isNotBlank() && !l.startsWith("Now answer") && !l.startsWith("That was the last") && "\"tool\"" !in l && !l.startsWith("<") && !l.trimEnd().endsWith(":")
+        }
+        lines.firstOrNull { it.startsWith("Error:") }?.let { return "I couldn't do that on your phone. ${it.removePrefix("Error:").trim()}" }
+        return when (tool) {
+            "search_context" -> lines.firstOrNull { " · " in it }?.let { "Found “$value” on your phone: ${it.take(140)}." }
+                ?: "I couldn't find “$value” on your phone."
+            "open_app" -> "I opened $value for you."
+            "device_status" -> "Here's your phone: ${lines.take(2).joinToString("; ").take(140)}."
+            else -> "Done."
+        }
+    }
 
     /** A canned line that mentions the photos or voice notes on the newest message, if it has any. */
     private fun mediaReply(request: GenerateRequest): String? {

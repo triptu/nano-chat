@@ -1,6 +1,8 @@
 package ai.tushar.nanochat.model
 
+import ai.tushar.nanochat.handset.ToolRequest
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.JsonObject
 import java.time.Duration
 
 enum class Availability { Unavailable, Downloadable, Downloading, Available }
@@ -55,7 +57,12 @@ data class GenerateRequest(
     val turns: List<Turn> = emptyList(),
     /** Identifies the chat, so a backend can keep its conversation state between replies. */
     val chatKey: Long = 0,
+    /** Tools the model may call. A backend with [ModelBackend.nativeTools] declares them; others get them in the prompt. */
+    val tools: List<ToolSpec> = emptyList(),
 )
+
+/** A tool as declared to a model that calls tools natively. [parameters] is a JSON schema object. */
+data class ToolSpec(val name: String, val description: String, val parameters: JsonObject)
 
 /** Speed facts a backend reports for one reply. */
 data class RunStats(
@@ -66,8 +73,11 @@ data class RunStats(
     val decodeTokens: Int? = null,
 )
 
-/** One streamed piece of a reply. [finishReason] is set on the last chunk only, and [stats] may come with it. */
-data class GenerateChunk(val text: String, val finishReason: String?, val stats: RunStats? = null)
+/**
+ * One streamed piece of a reply. [finishReason] is set on the last chunk only, and [stats] may come with it.
+ * [toolCalls] come from backends that call tools natively.
+ */
+data class GenerateChunk(val text: String, val finishReason: String?, val stats: RunStats? = null, val toolCalls: List<ToolRequest> = emptyList())
 
 enum class ModelErrorKind { Busy, Quota, Background, TooLarge, NotReady, Other }
 
@@ -98,6 +108,8 @@ interface ModelBackend {
     val media: MediaSupport
     /** True when the backend takes [GenerateRequest.turns] and a real system instruction instead of the transcript. */
     val nativeChat: Boolean get() = false
+    /** True when the model declares tools and returns calls itself, instead of the JSON call format in the prompt. */
+    val nativeTools: Boolean get() = false
     /** True for backends that hold a large engine in this app's memory, so only one may be loaded at a time. */
     val heavy: Boolean get() = false
     /** Size of the one-time download, when known up front. */

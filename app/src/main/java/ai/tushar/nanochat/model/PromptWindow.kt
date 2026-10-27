@@ -6,7 +6,13 @@ import ai.tushar.nanochat.data.Role
 /** A photo or voice note inside a turn, as the model sees it. [modelPath] is the absolute path of the file sent to the model. */
 data class TurnMedia(val kind: AttachmentKind, val modelPath: String, val durationMs: Long? = null)
 
-data class Turn(val role: Role, val text: String, val media: List<TurnMedia> = emptyList())
+data class Turn(val role: Role, val text: String, val media: List<TurnMedia> = emptyList(), val tool: ToolTurn? = null)
+
+/** A tool round inside a reply: the model's call (on an agent turn) or what came back (on the turn after it). */
+sealed interface ToolTurn {
+    data class Call(val request: ai.tushar.nanochat.handset.ToolRequest) : ToolTurn
+    data class Result(val tool: String) : ToolTurn
+}
 
 /** What gets sent to the model for one reply, and how much history made it in. */
 data class PromptPlan(
