@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.mapNotNull
 class MlKitBackend(private val context: Context) : ModelBackend {
     private val client = Generation.getClient()
     override val kind = BackendKind.Real
+    override val foregroundOnly = true
     /** The Prompt API takes one image per request, with the text; it has no audio input. */
     override val media = MediaSupport(maxImages = 1, imagesInNewestTurnOnly = true, tokensPerImage = NanoImageTokens, audio = false)
 

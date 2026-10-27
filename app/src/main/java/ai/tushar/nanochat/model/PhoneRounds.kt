@@ -29,7 +29,7 @@ fun toolInstructions(tools: Collection<String>, native: Boolean, now: LocalDateT
     append("You can use this phone through tools. To use one, reply with only one JSON object and nothing else, like:\n")
     append("{\"tool\": \"open_app\", \"arguments\": {\"app\": \"Clock\"}}\n")
     append("The result comes back in the next message as \"$PhoneSpeaker:\". Use a tool only when the message needs the phone, ")
-    append("and never make up a result. At most $MaxToolCalls tools per reply.\nTools:\n")
+    append("and never make up a result. At most $MaxToolCalls tools per reply. Opening an app ends your reply, so do it last.\nTools:\n")
     PhoneTool.entries.filter { it.slug in tools }.forEach { append("- ").append(it.brief).append('\n') }
     append("It is now $time.")
 }

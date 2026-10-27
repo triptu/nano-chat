@@ -40,6 +40,7 @@ class FakeBackend(
         ModelId.GemmaE4B -> MediaSupport(maxImages = 4, imagesInNewestTurnOnly = false, tokensPerImage = 280, audio = true, audioTokensPerSecond = 25)
     }
     override val nativeChat: Boolean = model != ModelId.Nano
+    override val foregroundOnly: Boolean = model == ModelId.Nano
     override val downloadBytes: Long = if (model == ModelId.Nano) 1_480_000_000L else 3_659_530_240L
     private var downloaded = false
 

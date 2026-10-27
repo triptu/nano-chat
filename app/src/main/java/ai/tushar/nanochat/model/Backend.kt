@@ -110,6 +110,8 @@ interface ModelBackend {
     val nativeChat: Boolean get() = false
     /** True when the model declares tools and returns calls itself, instead of the JSON call format in the prompt. */
     val nativeTools: Boolean get() = false
+    /** True when the model answers only while this app is on screen, as Gemini Nano does. */
+    val foregroundOnly: Boolean get() = false
     /** True for backends that hold a large engine in this app's memory, so only one may be loaded at a time. */
     val heavy: Boolean get() = false
     /** Size of the one-time download, when known up front. */

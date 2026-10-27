@@ -13,6 +13,7 @@ import ai.tushar.nanochat.handset.HandsetLink
 import ai.tushar.nanochat.handset.McpException
 import ai.tushar.nanochat.handset.ModelOutput
 import ai.tushar.nanochat.handset.PhoneSession
+import ai.tushar.nanochat.handset.PhoneTool
 import ai.tushar.nanochat.handset.StepOutcome
 import ai.tushar.nanochat.handset.ToolRequest
 import ai.tushar.nanochat.handset.callClosed
@@ -287,6 +288,11 @@ class ChatEngine(
                             result = ran.forPerson.take(ToolStep.MaxResultChars),
                             sentChars = if (ran.outcome == StepOutcome.Done && fitted.cut) fitted.keptChars else ran.forPerson.length,
                         )
+                        // An opened app puts this one in the background, where Nano can't answer, so the step is the reply.
+                        if (backend.foregroundOnly && call.tool == PhoneTool.OpenApp.slug && ran.outcome == StepOutcome.Done) {
+                            fallback = "${steps.last().label}."
+                            break
+                        }
                         val last = steps.size >= MaxToolCalls
                         val message = resultMessage(call.tool, fitted.text, native, last)
                         // Native chat replays the model's own call, so its cache still matches; the JSON format gets the call cleaned up.
@@ -347,7 +353,7 @@ class ChatEngine(
             handset?.forget()
             "Handset no longer accepts Nano Chat. Turn on Use this phone in Edit ${agent.name} to connect again."
         }
-        McpException.Kind.Unreachable -> "Handset isn't answering. Open Handset and check that Direct connection is on, under Connections in its Settings."
+        McpException.Kind.Unreachable -> "Handset isn't answering. Open Handset once so it starts again, then try again."
         McpException.Kind.Protocol -> "Handset answered with something Nano Chat can't read: ${e.message}"
     }
 

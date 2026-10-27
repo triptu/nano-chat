@@ -49,7 +49,8 @@ sealed interface ConnectResult {
             return NotConnected(
                 when (data?.getStringExtra("reason")) {
                     "denied" -> "Not connected. Handset asks again next time you turn this on."
-                    "handset_off" -> "Handset's Direct connection is off. Turn it on in Handset's Settings, under Connections, then try again."
+                    "handset_off" -> "Handset is switched off. Turn it on in Handset, then try again."
+                    "port_in_use" -> "Another app is using Handset's port on this phone, so Handset gave no token. Close that app and try again."
                     else -> "Not connected. Try again?"
                 },
             )
