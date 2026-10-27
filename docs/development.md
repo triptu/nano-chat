@@ -20,7 +20,7 @@ What a developer needs beyond the README. The code is one Gradle module, `app`, 
 ./gradlew :app:testDebugUnitTest    # AGP 9 runs unit tests on the debug variant only
 ```
 
-Release builds are minified and signed with the debug key, in `app/build.gradle.kts`. Change the signing config before shipping to anyone. ML Kit needs the R8 keep rules in `app/proguard-rules.pro`, since the beta crashes on launch without them.
+Release builds are minified. They sign with the key in `~/.config/nano-chat/` when that folder exists, or with the `NANOCHAT_KEYSTORE` and `NANOCHAT_KEYSTORE_PASSWORD` variables, and with the debug key otherwise. Android refuses an update signed with a different key. The version code is the minutes since the start of 2026, so a newer build always installs over an older one. ML Kit needs the R8 keep rules in `app/proguard-rules.pro`, since the beta crashes on launch without them.
 
 ## Models
 
