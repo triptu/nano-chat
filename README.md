@@ -2,6 +2,10 @@
 
 Nano Chat is an Android app for talking to AI models that run on the phone itself, so nothing you write leaves it. Each companion is one ongoing chat, like a contact, with its own name, colour and personality. A companion runs on Gemini Nano, the model built into recent Android phones, or on Gemma 4 E4B, a larger model you download once that also understands photos and voice notes. With [Handset](https://github.com/triptu/handset) installed, a companion can also use the phone: search what you saw, catch up on messages, open an app, set an alarm.
 
+<a href="https://github.com/triptu/nano-chat/blob/main/site/public/media/trailer.mp4"><img src="site/public/media/poster.png" width="720" alt="Nano Chat's launch trailer: companions, replies from a model on the phone, a photo, and a companion using the phone through Handset"></a>
+
+[Watch the trailer](https://github.com/triptu/nano-chat/blob/main/site/public/media/trailer.mp4) (51 s, sound optional) · Website: [nanochat.tushar.ai](https://nanochat.tushar.ai)
+
 <p>
 <img src="docs/shots/handset_chat-light.png" width="240" alt="A chat with Nano. It searched the phone for a word, then opened Clock, with a line under each reply for the step it took.">
 <img src="docs/shots/fold_gemma_photo.jpg" width="240" alt="Basil, on Gemma 4 E4B, answering a photo of a fridge with two dinner ideas.">
