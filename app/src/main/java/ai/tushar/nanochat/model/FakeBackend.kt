@@ -135,6 +135,14 @@ class FakeBackend(
         Regex("(?i)\\bopen (?:the )?(.+?)(?: app)?(?= and |[.?!]|$)").find(message)?.let {
             found += it.range.first to call("open_app", "app", it.groupValues[1].trim())
         }
+        Regex("(?i)\\bset an alarm for (\\d{1,2})(?::(\\d{2}))?").find(message)?.let {
+            val minute = it.groupValues[2].ifEmpty { "0" }.toInt()
+            found += it.range.first to """{"tool":"set_alarm","arguments":{"hour":${it.groupValues[1].toInt()},"minute":$minute}}"""
+        }
+        Regex("(?i)\\ba timer for (\\d+) ?(min|sec)").find(message)?.let {
+            val seconds = it.groupValues[1].toInt() * if (it.groupValues[2].lowercase() == "min") 60 else 1
+            found += it.range.first to """{"tool":"set_timer","arguments":{"seconds":$seconds}}"""
+        }
         if (Regex("(?i)\\b(battery|phone status)\\b").containsMatchIn(message)) found += message.length to """{"tool":"device_status","arguments":{}}"""
         return found.sortedBy { it.first }.map { it.second }
     }
@@ -153,6 +161,8 @@ class FakeBackend(
             "search_context" -> lines.firstOrNull { " · " in it }?.let { "Found “$value” on your phone: ${it.take(140)}." }
                 ?: "I couldn't find “$value” on your phone."
             "open_app" -> "I opened $value for you."
+            "set_alarm" -> "I set the alarm."
+            "set_timer" -> "I started the timer."
             "device_status" -> "Here's your phone: ${lines.take(2).joinToString("; ").take(140)}."
             else -> "Done."
         }

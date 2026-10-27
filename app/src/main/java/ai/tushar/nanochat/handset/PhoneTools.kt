@@ -26,6 +26,15 @@ enum class PhoneTool(val slug: String, val brief: String) {
     companion object {
         fun of(slug: String): PhoneTool? = entries.firstOrNull { it.slug == slug }
 
+        /**
+         * True when the tool's result can hold text from outside: what the user saw, their messages, or a track's
+         * title and artist. A tool not listed here counts as one. The acting tools' confirmations and device_status don't.
+         */
+        fun bringsOutsideText(tool: String): Boolean = when (of(tool)) {
+            OpenApp, SetAlarm, SetTimer, SetDoNotDisturb, DeviceStatus -> false
+            else -> true
+        }
+
         /** True when the call changes something on the phone rather than reading it. A tool not listed here counts as acting. */
         fun acts(tool: String, arguments: JsonObject): Boolean = when (of(tool)) {
             SearchContext, InboxSince, DayTimeline, DeviceStatus -> false

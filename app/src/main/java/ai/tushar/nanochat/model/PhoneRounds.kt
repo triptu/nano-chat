@@ -55,7 +55,7 @@ private fun slim(schema: JsonObject): JsonObject {
 }
 
 /**
- * The tools a reply may still call once it has read from the phone: none that act, and now_playing without its action.
+ * The tools a reply may still call once it has read text from outside: none that act, and now_playing without its action.
  * Text that came back might be someone else's words, so a reply that read it can't act on it.
  */
 fun readOnlySpecs(specs: List<ToolSpec>): List<ToolSpec> = specs.mapNotNull { spec ->
@@ -99,12 +99,12 @@ fun callJson(r: ToolRequest): String = buildJsonObject { put("tool", r.tool); pu
  * What the model reads after a tool ran, marked as data. Native backends get only that, and lose the acting tools from
  * their declarations; the JSON format is told they're off, and gets a nudge too.
  */
-fun resultMessage(tool: String, result: String, native: Boolean, last: Boolean): String {
+fun resultMessage(tool: String, result: String, native: Boolean, last: Boolean, actingOff: Boolean = true): String {
     val data = untrusted(tool, result)
     return when {
         native -> data
         last -> "Result of $tool:\n$data\nThat was the last tool for this reply. Now answer in plain words."
-        else -> "Result of $tool:\n$data\n$ActingOff\nNow answer in plain words, or call one more tool."
+        else -> "Result of $tool:\n$data\n${if (actingOff) "$ActingOff\n" else ""}Now answer in plain words, or call one more tool."
     }
 }
 

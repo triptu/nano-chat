@@ -57,8 +57,8 @@ internal class ReplyLoop(
     /** Set when the reply is a fixed line instead of the model's words, as when it kept getting the call format wrong. */
     var fallback: String? = null
 
-    /** True once a tool result is in the context. */
-    private val readFromPhone: Boolean get() = steps.any { it.tool.isNotEmpty() }
+    /** True once a result that can hold someone else's words is in the context. */
+    private val readFromPhone: Boolean get() = steps.any { it.tool.isNotEmpty() && PhoneTool.bringsOutsideText(it.tool) }
 
     /** An acting call after a read: shown as a step, and the model is told why it didn't run. */
     private suspend fun refuse(said: String, call: ToolRequest) {
@@ -80,18 +80,19 @@ internal class ReplyLoop(
     suspend fun replay(saved: List<ToolStep>) {
         val taken = saved.filter { it.tool.isNotEmpty() }
         taken.forEachIndexed { i, s ->
+            val actingOff = taken.take(i + 1).any { PhoneTool.bringsOutsideText(it.tool) }
             val arguments = runCatching { Json.parseToJsonElement(s.arguments).jsonObject }.getOrDefault(JsonObject(emptyMap()))
             val call = ToolRequest(s.tool, arguments)
             val message = when {
                 s.label == NotActedLabel -> notActedMessage(s.tool)
-                s.outcome == StepOutcome.Done.name -> resultMessage(s.tool, s.result.take(s.sentChars), native, last = i + 1 >= MaxToolCalls)
-                else -> resultMessage(s.tool, "Error: ${s.result}", native, last = i + 1 >= MaxToolCalls)
+                s.outcome == StepOutcome.Done.name -> resultMessage(s.tool, s.result.take(s.sentChars), native, last = i + 1 >= MaxToolCalls, actingOff)
+                else -> resultMessage(s.tool, "Error: ${s.result}", native, last = i + 1 >= MaxToolCalls, actingOff)
             }
             val modelSaid = if (native) "" else callJson(call)
             request = request.withRound(modelSaid, call, message, s.tool, agentName)
             used += countOrEstimate(backend, modelSaid + message)
         }
-        if (native && taken.isNotEmpty()) request = request.copy(tools = readOnlySpecs(request.tools))
+        if (native && readFromPhone) request = request.copy(tools = readOnlySpecs(request.tools))
     }
 
     suspend fun run() {
@@ -172,11 +173,11 @@ internal class ReplyLoop(
                         break
                     }
                     val last = steps.size >= MaxToolCalls
-                    val message = resultMessage(call.tool, fitted.text, native, last)
+                    val message = resultMessage(call.tool, fitted.text, native, last, actingOff = readFromPhone)
                     // Native chat replays the model's own call, so its cache still matches; the JSON format gets the call cleaned up.
                     val modelSaid = if (native) said else callJson(call)
                     request = request.withRound(modelSaid, calls.firstOrNull() ?: call, message, call.tool, agentName)
-                    if (native) request = request.copy(tools = readOnlySpecs(request.tools))
+                    if (native && readFromPhone) request = request.copy(tools = readOnlySpecs(request.tools))
                     used += countOrEstimate(backend, modelSaid + message)
                     show("", false)
                 }

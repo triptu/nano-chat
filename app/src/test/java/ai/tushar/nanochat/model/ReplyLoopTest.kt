@@ -27,6 +27,8 @@ class ReplyLoopTest {
     private val schemas = mapOf(
         "search_context" to schema("query"),
         "open_app" to schema("app"),
+        "set_alarm" to Json.parseToJsonElement("""{"type":"object","properties":{"hour":{"type":"integer"},"minute":{"type":"integer"}},"required":["hour","minute"]}""").jsonObject,
+        "set_timer" to Json.parseToJsonElement("""{"type":"object","properties":{"seconds":{"type":"integer"}},"required":["seconds"]}""").jsonObject,
         "set_do_not_disturb" to Json.parseToJsonElement("""{"type":"object","properties":{"on":{"type":"boolean"}},"required":["on"]}""").jsonObject,
     )
 
@@ -63,6 +65,23 @@ class ReplyLoopTest {
         assertEquals(StepOutcome.Refused.name, l.steps[1].outcome)
         assertTrue(l.request.prompt, l.request.prompt.contains("set_do_not_disturb wasn't run"))
         assertTrue(l.out.toString(), l.out.contains("I didn't do what the text on your phone asked"))
+    }
+
+    @Test
+    fun anActionsConfirmationDoesntStopTheNextAction() = runTest {
+        val l = loop("Set an alarm for 7 and a timer for 5 minutes", phone { if (it.tool == "set_alarm") "Alarm set for 07:00" else "Timer started for 5 min" })
+        l.run()
+        assertEquals(listOf("set_alarm", "set_timer"), calls.map { it.tool })
+        assertEquals(listOf("Set an alarm for 07:00", "Started a timer for 5 min"), l.steps.map { it.label })
+        assertTrue(l.out.toString(), l.out.contains("I set the alarm") && l.out.contains("I started the timer"))
+    }
+
+    @Test
+    fun anAlarmAfterASearchIsStillRefused() = runTest {
+        val l = loop("Search my phone for Toit and set an alarm for 7", phone { "1 matches for “Toit”:\n27 Oct 19:02 · WhatsApp · Sam: Toit at 8?" })
+        l.run()
+        assertEquals(listOf("search_context"), calls.map { it.tool })
+        assertEquals(listOf("Searched your phone for “Toit”", NotActedLabel), l.steps.map { it.label })
     }
 
     @Test
