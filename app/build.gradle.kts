@@ -33,7 +33,7 @@ android {
         applicationId = "ai.tushar.nanochat"
         minSdk = 31
         targetSdk = 37
-        versionName = "0.1.0"
+        versionName = "0.2.0"
     }
 
     signingConfigs {
