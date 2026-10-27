@@ -56,6 +56,7 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.serialization.json)
     implementation(libs.mlkit.genai.prompt)
     implementation(libs.litertlm.android)
     debugImplementation(libs.compose.ui.tooling)
