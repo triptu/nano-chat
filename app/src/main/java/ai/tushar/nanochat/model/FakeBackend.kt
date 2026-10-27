@@ -109,7 +109,8 @@ class FakeBackend(
     /**
      * A scripted phone step, so the tool loop can be tried without a real model. When the prompt offers tools, a message
      * like "Search my phone for Toit and open Maps" gets one call per thing asked, in order, then a line built from
-     * what came back.
+     * what came back. Like a gullible model, it also does what a result tells it to, when that's "turn on do not
+     * disturb", so the guard against acting on phone text can be seen working.
      */
     private fun toolReply(request: GenerateRequest): String? {
         val system = request.systemPrompt ?: (request.promptPrefix.orEmpty() + request.prompt)
@@ -117,10 +118,12 @@ class FakeBackend(
         val sinceUser = request.prompt.substringAfterLast("\nUser: ", missingDelimiterValue = "")
         val asked = sinceUser.lineSequence().firstOrNull().orEmpty()
         val rounds = sinceUser.split("\n$PhoneSpeaker: ").drop(1)
-        val wanted = scriptedCalls(asked)
-        wanted.getOrNull(rounds.size)?.let { return it }
+        val made = CallInPrompt.findAll(sinceUser).map { it.value }.toList()
+        val told = rounds.lastOrNull()?.let(::dataLines).orEmpty().any { "turn on do not disturb" in it.lowercase() }
+        if (told && made.none { "set_do_not_disturb" in it }) return """{"tool":"set_do_not_disturb","arguments":{"on":true}}"""
+        scriptedCalls(asked).firstOrNull { it !in made }?.let { return it }
         if (rounds.isEmpty()) return null
-        return rounds.zip(wanted).joinToString(" ") { (round, call) -> describeRound(call, round) }
+        return made.zip(rounds).joinToString(" ") { (call, round) -> describeRound(call, round) }
     }
 
     /** What the user's message asks the phone for, as calls in the order asked. */
@@ -143,9 +146,8 @@ class FakeBackend(
     private fun describeRound(call: String, round: String): String {
         val tool = Regex("\"tool\":\"(\\w+)\"").find(call)?.groupValues?.get(1)
         val value = Regex("\"arguments\":\\{\"\\w+\":\"([^\"]*)\"").find(call)?.groupValues?.get(1).orEmpty()
-        val lines = round.lines().drop(1).filter { l ->
-            l.isNotBlank() && !l.startsWith("Now answer") && !l.startsWith("That was the last") && "\"tool\"" !in l && !l.startsWith("<") && !l.trimEnd().endsWith(":")
-        }
+        if ("wasn't run" in round) return "I didn't do what the text on your phone asked. Ask me yourself if you want it done."
+        val lines = dataLines(round).filter { it.isNotBlank() }
         lines.firstOrNull { it.startsWith("Error:") }?.let { return "I couldn't do that on your phone. ${it.removePrefix("Error:").trim()}" }
         return when (tool) {
             "search_context" -> lines.firstOrNull { " · " in it }?.let { "Found “$value” on your phone: ${it.take(140)}." }
@@ -155,6 +157,9 @@ class FakeBackend(
             else -> "Done."
         }
     }
+
+    /** The lines of a result, without the marks that say they're data. */
+    private fun dataLines(round: String) = round.lines().filter { it.startsWith("| ") || it == "|" }.map { it.removePrefix("|").removePrefix(" ") }
 
     /** A canned line that mentions the photos or voice notes on the newest message, if it has any. */
     private fun mediaReply(request: GenerateRequest): String? {
@@ -181,6 +186,9 @@ class FakeBackend(
         return if (best.keywords.any { it in lastUser }) best.text else pool[random.nextInt(pool.size)].text
     }
 }
+
+/** A call the engine wrote back into the prompt, as [callJson] writes it. */
+private val CallInPrompt = Regex("\\{\"tool\":\"\\w+\",\"arguments\":\\{[^}]*\\}\\}")
 
 internal fun estimateTokens(text: String): Int = if (text.isEmpty()) 0 else (text.length + 3) / 4
 

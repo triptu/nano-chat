@@ -25,6 +25,13 @@ enum class PhoneTool(val slug: String, val brief: String) {
 
     companion object {
         fun of(slug: String): PhoneTool? = entries.firstOrNull { it.slug == slug }
+
+        /** True when the call changes something on the phone rather than reading it. A tool not listed here counts as acting. */
+        fun acts(tool: String, arguments: JsonObject): Boolean = when (of(tool)) {
+            SearchContext, InboxSince, DayTimeline, DeviceStatus -> false
+            NowPlaying -> (arguments["action"] as? JsonPrimitive)?.contentOrNull?.isNotBlank() == true
+            else -> true
+        }
     }
 }
 
