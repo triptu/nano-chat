@@ -4,6 +4,7 @@ import ai.tushar.nanochat.data.ChatDatabase
 import ai.tushar.nanochat.data.starterAgents
 import ai.tushar.nanochat.attachments.AttachmentStore
 import ai.tushar.nanochat.chat.ComposerDrafts
+import ai.tushar.nanochat.handset.HandsetLink
 import ai.tushar.nanochat.litert.LiteRtBackend
 import ai.tushar.nanochat.litert.LiteRtCatalog
 import ai.tushar.nanochat.model.ChatEngine
@@ -46,7 +47,8 @@ class AppGraph(context: Context) {
         settings = settings,
         scope = scope,
     )
-    val engine = ChatEngine(dao, models, settings, attachments, scope)
+    val handset = HandsetLink(context, BuildConfig.VERSION_NAME)
+    val engine = ChatEngine(dao, models, settings, attachments, scope, handset = handset)
     val drafts = ComposerDrafts()
 
     /** Deletes photo and voice note files that no message or draft needs any more. */
