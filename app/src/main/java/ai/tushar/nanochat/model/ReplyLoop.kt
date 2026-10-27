@@ -23,6 +23,8 @@ class ToolRun(val outcome: StepOutcome, val forModel: String, val forPerson: Str
 class PhoneAccess(
     val schemas: Map<String, JsonObject>,
     val call: suspend (ToolRequest) -> ToolRun,
+    /** Read before every call. False once the companion's Use this phone switch is off, which ends the reply's tool use. */
+    val allowed: suspend () -> Boolean = { true },
 )
 
 /** Room kept for the model's next call when sizing a result. */
@@ -141,6 +143,10 @@ internal class ReplyLoop(
                 is ModelOutput.Call -> {
                     if (steps.count { it.tool.isNotEmpty() } >= MaxToolCalls) {
                         fallback = "I've used my $MaxToolCalls phone steps for this reply. Tap a step to see what came back."
+                        break
+                    }
+                    if (!phone.allowed()) {
+                        fallback = "Use this phone was turned off, so I stopped there."
                         break
                     }
                     val call = decision.request

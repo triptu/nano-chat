@@ -196,7 +196,9 @@ class ChatEngine(
             chatKey = agentId,
             tools = specs,
         )
-        val access = phone?.let { p -> PhoneAccess(p.schemas) { call -> runTool(p, call, agent) } }
+        val access = phone?.let { p ->
+            PhoneAccess(p.schemas, call = { call -> runTool(p, call, agent) }, allowed = { phoneStillOn(agentId) })
+        }
         val loop = ReplyLoop(backend, agent.name, access, native, budget, request, plan.inputTokens + declared, steps, show = { text, running ->
             val shown = steps.map(::pendingStep) + listOfNotNull(if (running) PendingStep(UsingPhone, running = true) else null)
             _pending.update { it + (agentId to PendingReply(text, shown)) }
@@ -229,6 +231,9 @@ class ChatEngine(
         }
         save(record())
     }
+
+    private suspend fun phoneStillOn(agentId: Long): Boolean =
+        dao.agentNow(agentId)?.useHandset == true && handset?.connection?.value != null
 
     /** Handset's tools for this reply, or null with a failed step saying why the phone can't be used. */
     private suspend fun openPhone(agent: Agent, steps: MutableList<ToolStep>): PhoneSession? {

@@ -32,11 +32,11 @@ class ReplyLoopTest {
 
     private val calls = mutableListOf<ToolRequest>()
 
-    private fun phone(answer: (ToolRequest) -> String) = PhoneAccess(schemas) { call ->
+    private fun phone(answer: (ToolRequest) -> String) = PhoneAccess(schemas, call = { call ->
         calls += call
         val text = answer(call)
         ToolRun(StepOutcome.Done, text, text)
-    }
+    })
 
     private fun fake() = FakeBackend(random = Random(1), pace = FakePace(firstTokenMs = 0..0, tokensPerSecond = 1000..1000), model = ModelId.GemmaE4B)
 
@@ -89,6 +89,16 @@ class ReplyLoopTest {
         assertEquals(listOf("search_context"), calls.map { it.tool })
         assertEquals(listOf("Opened Maps", "Searched your phone for “Toit”"), again.steps.map { it.label })
         assertTrue(again.out.toString(), again.out.contains("I opened Maps") && again.out.contains("Found “Toit”"))
+    }
+
+    @Test
+    fun turningThePhoneOffStopsARunningReply() = runTest {
+        var on = true
+        val answer = phone { on = false; if (it.tool == "open_app") "Opened Maps" else "1 matches" }
+        val l = loop("Open Maps and search for Toit", PhoneAccess(schemas, answer.call, allowed = { on }))
+        l.run()
+        assertEquals(listOf("open_app"), calls.map { it.tool })
+        assertEquals("Use this phone was turned off, so I stopped there.", l.fallback)
     }
 
     @Test

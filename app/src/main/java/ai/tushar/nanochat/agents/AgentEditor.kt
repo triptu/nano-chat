@@ -110,6 +110,7 @@ class AgentsViewModel(private val graph: AppGraph) : ViewModel() {
                 createdAt = System.currentTimeMillis(), model = d.model?.name, useHandset = d.useHandset,
             ),
         )
+        releasePhone()
         then(id)
     }
 
@@ -121,12 +122,17 @@ class AgentsViewModel(private val graph: AppGraph) : ViewModel() {
                 model = d.model?.name, useHandset = d.useHandset,
             ),
         )
+        releasePhone()
     }
+
+    /** Once no companion uses the phone, Nano Chat keeps no token for it. */
+    private suspend fun releasePhone() = graph.handset.forgetIfUnused(graph.dao.handsetAgentCount())
 
     fun delete(agentId: Long) = viewModelScope.launch {
         graph.engine.stop(agentId)
         graph.drafts.take(agentId).forEach(graph.attachments::discard)
         graph.dao.deleteAgent(agentId)
+        releasePhone()
         graph.cleanUpAttachments()
     }
 

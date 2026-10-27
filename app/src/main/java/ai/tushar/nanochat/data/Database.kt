@@ -199,6 +199,9 @@ interface ChatDao {
     @Insert suspend fun insertAgents(agents: List<Agent>): List<Long>
     @Update suspend fun updateAgent(agent: Agent)
 
+    @Query("SELECT COUNT(*) FROM agents WHERE useHandset = 1")
+    suspend fun handsetAgentCount(): Int
+
     @Query("DELETE FROM agents WHERE id = :id")
     suspend fun deleteAgent(id: Long)
 

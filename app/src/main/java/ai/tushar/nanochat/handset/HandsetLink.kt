@@ -63,13 +63,25 @@ sealed interface ConnectResult {
 /** The tools a reply may call, read from Handset, and the client to call them with. */
 class PhoneSession(val client: McpClient, val schemas: Map<String, JsonObject>, val connection: HandsetConnection)
 
+/** Where the connection is kept between launches. */
+interface ConnectionStore {
+    fun load(): HandsetConnection?
+    fun save(c: HandsetConnection)
+    fun clear()
+}
+
 /**
  * This app's one connection to Handset. The token is encrypted with a key that never leaves the Android Keystore, and
  * the encrypted copy is kept in app-private preferences.
  */
-class HandsetLink(private val context: Context, private val appVersion: String) {
-    private val prefs = context.getSharedPreferences("handset", Context.MODE_PRIVATE)
-    private val _connection = MutableStateFlow(load())
+class HandsetLink internal constructor(
+    private val packages: () -> PackageManager,
+    private val store: ConnectionStore,
+    private val appVersion: String,
+) {
+    constructor(context: Context, appVersion: String) : this({ context.packageManager }, PrefsConnectionStore(context), appVersion)
+
+    private val _connection = MutableStateFlow(store.load())
     val connection: StateFlow<HandsetConnection?> = _connection.asStateFlow()
 
     private val lock = Mutex()
@@ -77,30 +89,34 @@ class HandsetLink(private val context: Context, private val appVersion: String) 
     private var sessionAt = 0L
 
     fun installed(): Boolean = try {
-        context.packageManager.getPackageInfo(HandsetApp.Package, 0)
+        packages().getPackageInfo(HandsetApp.Package, 0)
         true
     } catch (_: PackageManager.NameNotFoundException) {
         false
     }
 
     /** True when the installed Handset has the screen that connects other apps. */
-    fun canConnect(): Boolean = context.packageManager.resolveActivity(HandsetApp.connectIntent(), 0) != null
+    fun canConnect(): Boolean = packages().resolveActivity(HandsetApp.connectIntent(), 0) != null
 
     fun save(c: HandsetConnection) {
-        prefs.edit {
-            putString(KeyUrl, c.url)
-            putString(KeyAgent, c.agentId)
-            putString(KeyToken, SecretBox.seal(c.token))
-        }
+        store.save(c)
         session = null
         _connection.value = c
     }
 
     /** Drops the token, as when Handset stops accepting it. Turning a companion's switch on connects again. */
     fun forget() {
-        prefs.edit { clear() }
+        store.clear()
         session = null
         _connection.value = null
+    }
+
+    /**
+     * Drops the token and the cached session when no companion has Use this phone on, so turning it on again goes
+     * through Handset's connect screen, which gives a new token.
+     */
+    fun forgetIfUnused(companionsUsingIt: Int) {
+        if (companionsUsingIt == 0 && _connection.value != null) forget()
     }
 
     /**
@@ -117,18 +133,34 @@ class HandsetLink(private val context: Context, private val appVersion: String) 
         PhoneSession(client, schemas, c).also { session = it; sessionAt = now }
     }
 
-    private fun load(): HandsetConnection? {
+    private companion object {
+        const val SessionTtlMs = 60_000L
+    }
+}
+
+/** The connection in app-private preferences, with the token sealed by [SecretBox]. */
+private class PrefsConnectionStore(context: Context) : ConnectionStore {
+    private val prefs = context.getSharedPreferences("handset", Context.MODE_PRIVATE)
+
+    override fun load(): HandsetConnection? {
         val url = prefs.getString(KeyUrl, null) ?: return null
         val agent = prefs.getString(KeyAgent, null) ?: return null
         val token = prefs.getString(KeyToken, null)?.let { runCatching { SecretBox.open(it) }.getOrNull() } ?: return null
         return HandsetConnection(url, token, agent)
     }
 
+    override fun save(c: HandsetConnection) = prefs.edit {
+        putString(KeyUrl, c.url)
+        putString(KeyAgent, c.agentId)
+        putString(KeyToken, SecretBox.seal(c.token))
+    }
+
+    override fun clear() = prefs.edit { clear() }
+
     private companion object {
         const val KeyUrl = "url"
         const val KeyAgent = "agent_id"
         const val KeyToken = "token"
-        const val SessionTtlMs = 60_000L
     }
 }
 
