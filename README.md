@@ -13,4 +13,16 @@ Gemini Nano needs a phone with Google AICore. Gemma 4 E4B needs about 5 GB of fr
 ./gradlew :app:testDebugUnitTest
 ```
 
+## Use this phone
+
+A companion can use the phone through [Handset](https://github.com/triptu/handset#readme), a separate app on the same phone. Install Handset, open a companion's edit sheet, and turn on **Use this phone**. Handset asks once what Nano Chat may read, such as notifications or location. After you tap Allow, every companion you switch on uses that one connection. Nano Chat talks to Handset only on the phone itself, at `127.0.0.1`, and the token is kept with a key held by Android's Keystore.
+
+A companion can then search what you saw on screen and in notifications, catch up on messages, read a day's timeline, check the phone's status, open apps, set alarms and timers, switch Do not disturb, and see or control what's playing. Each step shows as a line under the reply. Tap it to see what came back. If Handset says no because a source is off, the chat tells you what to turn on in Handset.
+
+Limits:
+- At most 3 tool calls per reply. Results are cut to fit the model's context, and the reply says when something was cut.
+- Screen-driving tools (reading the screen, tapping, typing) aren't offered. One screen takes more than Gemma's whole 2,048-token context, and small models drive screens poorly.
+- Gemma 4 E4B calls tools natively through LiteRT-LM. Gemini Nano follows a JSON format in its prompt, with one retry when it gets the format wrong.
+- Nano only answers while Nano Chat is on screen, so with Nano, opening an app ends the reply.
+
 Progress and decisions: [docs/progress.html](docs/progress.html).

@@ -103,6 +103,19 @@
 <h2>Shipped</h2>
 
 <div class="entry shipped">
+  <h3>Companions can use this phone through Handset (on the <code>handset</code> branch, emulator only)</h3>
+  <p>Each companion's edit sheet has a <b>Use this phone</b> switch. The first time, it opens Handset's "Nano Chat wants to use this phone" screen, and Allow hands back a token. One connection serves every companion. If Handset isn't installed, the switch is off and greyed, with an About Handset link. In the chat, each tool step is one quiet line under the reply. Tap it to see what came back. When Handset refuses, for example because a source is off, the reply says so, and the line underneath says what to turn on.</p>
+  <p>Checked on an emulator with a Handset release build from its connect-app branch, the fake model and real Handset tools. The search found a notification I posted, and Clock really opened. Not yet tried with real Nano or Gemma: that's the next check on the Fold.</p>
+  <div class="shots">
+    <figure><img src="shots/handset_chat-light.png" alt=""><figcaption>Emulator, debug build, fake model. A search, then opening Clock, each with its tool line.</figcaption></figure>
+    <figure><img src="shots/handset_chat-dark.png" alt=""><figcaption>The same chat in dark mode.</figcaption></figure>
+    <figure><img src="shots/handset_step-sheet-dark.png" alt=""><figcaption>Tapping a tool line shows what Handset returned.</figcaption></figure>
+    <figure><img src="shots/handset_refusal-light.png" alt=""><figcaption>Before notification recording was turned on in Handset: the refusal, and what to turn on.</figcaption></figure>
+    <figure><img src="shots/handset_edit2.png" alt=""><figcaption>The Use this phone switch in the edit sheet, after Allow in Handset.</figcaption></figure>
+  </div>
+</div>
+
+<div class="entry shipped">
   <h3>Try again after the app is killed, and Gemma's memory freed in the background</h3>
   <p>Release build on the Fold 7, cover screen, Gemma 4 E4B on the GPU. I sent Basil (Gemma) a message and force-stopped the app 7 s into the reply. On reopening, the message showed the same "Try again" card a failed reply gets, and the half-written reply was gone, as it is for a reply that fails partway. Try again reloaded Gemma (12.2 s, partly while the chat was open) and replied, with 5.42 s to the first token. A reply that kept streaming after I pressed Home finished and was saved. Gemma held 3.8 to 4.6 GB PSS while loaded.</p>
   <p>Android killed the backgrounded app for low memory 39 s after Home, twice, before the first 60 s release delay ran. So the delay is now 10 s, and that build is installed but not measured. Warm-up now runs only while the app is on screen, so a process Android restarts in the background no longer loads Gemma. Coming back to an open Gemma chat loads it again.</p>
@@ -201,6 +214,12 @@
 <div class="entry decision"><h3>Gemma is freed 10 s after the app leaves the screen</h3><p>While the app is in the background and no reply is running or loading, the Gemma engine is closed. The next Gemma message, or reopening a Gemma chat, loads it again (about 9 to 12 s). A reply in progress is never cut off: the release waits and retries every 10 s. I picked 10 s because Android killed the app 39 s after going home. It's one number in <code>NanoChatApp.kt</code>. Flip it if you'd rather keep Gemma warm longer.</p></div>
 <div class="entry decision"><h3>Unanswered messages get "Try again" on the next start</h3><p>On start, any chat whose last message is yours gets the same "Try again" card as a reply that failed, worded "didn't get to answer before the app closed". This also covers a reply you stopped before any text arrived.</p></div>
 
+<div class="entry decision"><h3>Nano Chat uses Handset instead of being a second phone agent</h3><p>Handset already exposes the phone over MCP, so Nano Chat is one more MCP client of it. Nano Chat sends JSON-RPC over plain HTTP to <code>127.0.0.1:8765</code>, with no SDK, using the 2025-06-18 <code>initialize</code> flow. Cleartext is allowed only for 127.0.0.1 and localhost. The token is encrypted with an AES key held in the Android Keystore. Nano Chat had no secret storage before, and EncryptedSharedPreferences is deprecated, so I didn't use it. If Handset stops accepting the token, Nano Chat forgets it, and turning the switch on again reconnects.</p></div>
+<div class="entry decision"><h3>Gemma calls tools natively; Nano uses a JSON format in the prompt</h3><p>LiteRT-LM 0.18.1 has documented tool calling: tools go in <code>ConversationConfig(tools=…, automaticToolCalling=false)</code>, and calls come back in <code>Message.toolCalls</code> (<a href="https://github.com/google-ai-edge/LiteRT-LM/blob/main/docs/api/kotlin/getting_started.md">docs</a>). Gemma 4's chat template has tool tokens. Nano Chat runs each call itself, so it can show it and limit it. ML Kit's Prompt API beta4, which the app uses, has no function calling. <code>genai-prompt 1.0.0-beta5</code> (2026-10-26) adds <code>setTools(List&lt;FunctionDeclaration&gt;)</code> and <code>FunctionCallPart</code>, but it has no docs yet and no device check for <code>FUNCTION_CALLING</code>, so I didn't upgrade. Nano gets one JSON object per call, <code>{"tool": …, "arguments": {…}}</code>. The parser accepts a code fence or a few words before the object, fixes "7" to 7, and checks required arguments. If a call is wrong, the model gets the reason and one retry. A second wrong call ends the reply with a plain apology. The fake model uses the JSON format with scripted calls.</p></div>
+<div class="entry decision"><h3>Nine tools by default, no screen driving</h3><p>Companions get search_context, inbox_since, day_timeline, device_status, open_app, set_alarm, set_timer, set_do_not_disturb and now_playing. Each gets a one-line description written for small models, not Handset's longer one, to save tokens. get_screen, tap, type_text and run_steps are left out. One screen is thousands of tokens, more than Gemma's 2,048-token window. Driving a screen also takes many careful steps, and small models get those wrong.</p></div>
+<div class="entry decision"><h3>At most 3 tool calls per reply, with results cut to fit</h3><p>With tools on, 40% of the input budget (up to 1,200 tokens) is kept free of history for tool rounds. Each result is cut to fit what's left: half of it for a reply's first two calls, and all of it for the third. Counting uses the backend's own token count, which is real for Nano and an estimate for Gemma. The cut ends at a line break, and the model reads "[Cut to fit: showing N of M characters.]" so it can say so. The tool line shows "· cut to fit", and its sheet shows how much the model read. Gemma's live conversation is rebuilt on the message after a tool reply, since the saved history doesn't keep tool rounds. That costs one prefill.</p></div>
+<div class="entry decision"><h3>Opening an app ends a Nano reply</h3><p>open_app puts Nano Chat in the background, and Nano refuses to answer there. So with Nano, a successful open_app ends the reply with "Opened Clock." The prompt tells the model to open apps last. Gemma keeps going after an app opens, since it runs in this app's process.</p></div>
+
 <h2>Open questions</h2>
 <div class="entry question">
   <h3>1. Gemma's context: 2,048 tokens or 4,096</h3>
@@ -221,7 +240,13 @@
   <p>My pick is (a) and (b) together, then compare on the phone. Nothing is blocked meanwhile.</p>
 </div>
 
+<div class="entry question">
+  <h3>4. Try ML Kit's new function calling on the Fold</h3>
+  <p>genai-prompt beta5 adds tool declarations and call parts, without docs. My pick is to check whether the Fold's Nano reports FUNCTION_CALLING before switching Nano from the JSON format. If it doesn't, nothing changes.</p>
+</div>
+
 <h2>Known issues</h2>
+<div class="entry issue"><h3>Using this phone: not tried with a real model</h3><p>Only the fake model ran the tool loop. Still to check on the Fold: whether Nano follows the JSON format, whether Gemma 4 E4B calls tools natively through LiteRT-LM, and how long Gemma's tool declarations and results take to prefill.</p></div>
 <div class="entry issue"><h3>Android can still kill the app while Gemma is loaded</h3><p>Gemma takes 3.8 to 4.6 GB. With it loaded and the app in the background, Android killed Nano Chat 39 s after Home, twice. Your message now gets "Try again" on the next start, and opening the chat reloads Gemma (9 to 12 s). Not yet measured: whether the 10 s release frees the memory in time (PSS before and after), and the 4,096 and 3,072-token windows with other apps open. Those are the next things to test.</p></div>
 <div class="entry issue"><h3>Downloads run only while the app is open</h3><p>The 3.66 GB download runs inside the app, not as a background job. If Android closes the app, the download stops. It resumes from where it stopped the next time you tap Download.</p></div>
 <div class="entry issue"><h3>Not measured</h3><p>The token cost of voice notes is estimated at 25 tokens per second; I didn't measure it. TalkBack, large fonts, the unfolded inner screen with Gemma, and a voice note recorded on the real mic were not checked. The test note was made with macOS text to speech and sent through the debug receiver, and recording was checked only on the emulator.</p></div>
