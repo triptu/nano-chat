@@ -49,7 +49,7 @@
           </a>
           <a class="button secondary" href="https://github.com/triptu/nano-chat">Source on GitHub</a>
         </div>
-        <p class="fine">Android 12 or newer. Free and open source under the MIT license.</p>
+        <p class="fine">Android 12 or newer. Gemini Nano needs Google AICore, on recent Pixel and Galaxy phones. Gemma 4 E4B needs a phone with 12 GB of memory.</p>
       </section>
 
       <ul class="companions wrap" aria-label="The companions a fresh install starts with">
@@ -81,7 +81,6 @@
         <div class="copy">
           <h2>Companions, kept like contacts</h2>
           <p>A fresh install has three companions. <b>New friend</b> makes another. Each has a name, a colour, a personality written in plain words, and a model. The personality goes to the model with every reply.</p>
-          <p>Replies keep running when you leave a chat, and Stop keeps what was written so far. If the app closes before a reply arrives, the message offers Try again.</p>
         </div>
         <div class="shots two">
           <picture>
@@ -110,6 +109,7 @@
           <h2>A companion can use your phone</h2>
           <p>With <a href="https://handset.tushar.ai">Handset</a> installed, turn on <b>Use this phone</b> in a companion’s edit sheet. Handset shows what Nano Chat asks for, with every source off until you switch it on.</p>
           <p>The companion can then search what you saw on screen and in notifications, catch up on messages, read a day’s timeline, open apps, set alarms and timers, switch Do not disturb, and control what’s playing. Each step shows as a line under the reply. Tap it to see what came back.</p>
+          <p>A companion takes at most 3 steps per reply, and can’t tap or type. The README lists <a href="https://github.com/triptu/nano-chat#limits">the rest of its limits</a>.</p>
         </div>
         <div class="shots two">
           <picture>
@@ -118,17 +118,6 @@
           </picture>
           <img src="/shots/step-sheet.webp" width="540" height="1200" loading="lazy" alt="The sheet for one step: what Nano searched for and what came back" />
         </div>
-      </section>
-
-      <section class="limits wrap">
-        <h2>What a companion won’t do</h2>
-        <p class="section-lede">What a companion may do on the phone is limited on purpose. Handset’s own rules apply on top.</p>
-        <ul class="rules">
-          <li>It takes at most 3 phone steps per reply.</li>
-          <li>It can’t read the screen, tap or type. Small models drive screens poorly.</li>
-          <li>Once a reply has read your content from the phone, it can’t act in that reply. A message from someone else can’t make a companion open an app or set an alarm.</li>
-          <li>Turning off Use this phone stops a reply that is using it.</li>
-        </ul>
       </section>
 
       <section class="install wrap" id="install">

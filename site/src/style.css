@@ -325,6 +325,21 @@ h2 {
   width: min(calc(50% - var(--gap) / 2), 16rem);
 }
 
+/* Side by side, two screens are too small to read on a narrow phone, so they scroll */
+@media (max-width: 30rem) {
+  .shots.two {
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+  }
+
+  .shots.two img {
+    flex: none;
+    width: 78%;
+    scroll-snap-align: start;
+  }
+}
+
 @media (min-width: 52rem) {
   .feature {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -337,16 +352,9 @@ h2 {
   }
 }
 
-.limits,
 .install,
 .privacy {
   padding-top: var(--section);
-}
-
-.section-lede {
-  margin-top: 1rem;
-  color: var(--text-2);
-  max-width: 38rem;
 }
 
 .steps {
@@ -380,19 +388,6 @@ h2 {
   max-width: 40rem;
   color: var(--text-3);
   font-size: 0.9375rem;
-}
-
-.rules {
-  margin: 1.5rem 0 0;
-  padding: 0 0 0 1.25rem;
-  display: grid;
-  gap: 0.75rem;
-  max-width: 40rem;
-  color: var(--text-2);
-}
-
-.rules li::marker {
-  color: var(--accent);
 }
 
 .companions {
