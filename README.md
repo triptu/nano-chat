@@ -24,5 +24,8 @@ Limits:
 - Screen-driving tools (reading the screen, tapping, typing) aren't offered. One screen takes more than Gemma's whole 2,048-token context, and small models drive screens poorly.
 - Gemma 4 E4B calls tools natively through LiteRT-LM. Gemini Nano follows a JSON format in its prompt, with one retry when it gets the format wrong.
 - Nano only answers while Nano Chat is on screen, so with Nano, opening an app ends the reply.
+- Once a reply has read anything from the phone, it can't act in that reply: no opening apps, alarms, timers, Do not disturb or playback controls. Text from the phone might be someone else's words, so a message can't make a companion act. Ask again in a new message to have it done.
+- Turning off Use this phone stops a reply that is using it. When no companion has it on, Nano Chat deletes its Handset token, and turning it on again goes through Handset's connect screen.
+- If the model stops after a step worked, the reply keeps that step, and Try again goes on from it instead of doing it twice.
 
 Progress and decisions: [docs/progress.html](docs/progress.html).
