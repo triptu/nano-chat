@@ -1,10 +1,22 @@
+# Build output
 .gradle/
 build/
+.kotlin/
+.cxx/
+captures/
+
+# Local machine
 local.properties
 .idea/
 *.iml
-.kotlin/
 .DS_Store
 .env*
+
+# Signing keys
 *.keystore
-captures/
+*.jks
+
+# Model files (downloaded by the app, never checked in)
+*.litertlm
+*.litertlm.part
+*.task
