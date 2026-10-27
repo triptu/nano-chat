@@ -34,6 +34,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.time.Duration
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.TimeSource
 
 /** A tool step while the reply is still being written. */
@@ -74,6 +75,8 @@ class ChatEngine(
 ) {
     private val lock = Mutex()
     private val jobs = mutableMapOf<Long, Job>()
+    /** Replies the model stopped partway after a tool worked, by companion. Try again goes on from their steps. */
+    private val interrupted = ConcurrentHashMap<Long, Long>()
 
     private val _pending = MutableStateFlow<Map<Long, PendingReply>>(emptyMap())
     val pending: StateFlow<Map<Long, PendingReply>> = _pending.asStateFlow()
@@ -85,13 +88,14 @@ class ChatEngine(
     fun send(agentId: Long, text: String, attachments: List<DraftAttachment> = emptyList()): Job? {
         val trimmed = text.trim()
         if ((trimmed.isEmpty() && attachments.isEmpty()) || agentId in jobs) return null
+        interrupted.remove(agentId)
         return start(agentId) {
             val id = dao.insertMessage(Message(agentId = agentId, role = Role.User, text = trimmed, createdAt = now()))
             if (attachments.isNotEmpty()) dao.insertAttachments(attachments.map { it.toAttachment(id) })
         }
     }
 
-    fun retry(agentId: Long): Job? = if (agentId in jobs) null else start(agentId) {}
+    fun retry(agentId: Long): Job? = if (agentId in jobs) null else start(agentId, interrupted.remove(agentId)) {}
 
     /**
      * Run once at app start. A chat whose last message is the user's lost its reply when the app was closed or killed,
@@ -108,11 +112,12 @@ class ChatEngine(
         jobs[agentId]?.cancel()
     }
 
-    private fun start(agentId: Long, before: suspend () -> Unit): Job {
+    /** [resume] is a reply the model stopped partway, which this one continues and replaces. */
+    private fun start(agentId: Long, resume: Long? = null, before: suspend () -> Unit): Job {
         val job = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 before()
-                lock.withLock { reply(agentId) }
+                lock.withLock { reply(agentId, resume) }
             } finally {
                 _pending.update { it - agentId }
                 synchronized(jobs) { jobs.remove(agentId) }
@@ -125,13 +130,13 @@ class ChatEngine(
         return job
     }
 
-    private suspend fun reply(agentId: Long) {
+    private suspend fun reply(agentId: Long, resume: Long?) {
         val agent = dao.agentNow(agentId) ?: return
         val modelId = ModelId.parse(agent.model) ?: settings.defaultModelNow()
-        models.use(modelId) { backend -> reply(agent, modelId, backend) }
+        models.use(modelId) { backend -> reply(agent, modelId, backend, resume) }
     }
 
-    private suspend fun reply(agent: Agent, modelId: ModelId, backend: ModelBackend) {
+    private suspend fun reply(agent: Agent, modelId: ModelId, backend: ModelBackend, resume: Long?) {
         val agentId = agent.id
         val defaults = settings.defaultParamsNow()
         val limit = runCatching { backend.tokenLimit() }.getOrNull()
@@ -143,7 +148,8 @@ class ChatEngine(
         )
         val budget = minOf(cap, (limit ?: Int.MAX_VALUE) - params.maxOutputTokens) - 8
         val media = dao.attachmentsNow(agentId).groupBy { it.messageId }
-        val history = dao.recentMessages(agentId, HistoryRows).map { m ->
+        val resumed = resume?.let { dao.toolStepsFor(it) }.orEmpty().map { it.copy(id = 0, messageId = 0) }
+        val history = dao.recentMessages(agentId, HistoryRows).filter { it.id != resume }.map { m ->
             Turn(m.role, m.text, media[m.id].orEmpty().map { TurnMedia(it.kind, store.file(it.modelFile).absolutePath, it.durationMs) })
         }
         if (history.firstOrNull()?.role != Role.User) return
@@ -156,7 +162,7 @@ class ChatEngine(
         val loadedBefore = backend.info().loadMs
 
         // Steps saved under the reply. A phone that can't be reached is one failed step, and the reply goes on without tools.
-        val steps = mutableListOf<ToolStep>()
+        val steps = resumed.toMutableList()
         val phone = if (agent.useHandset) openPhone(agent, steps) else null
         val native = phone != null && backend.nativeTools
         val specs = if (native) toolSpecs(phone!!.schemas) else emptyList()
@@ -195,6 +201,7 @@ class ChatEngine(
             val shown = steps.map(::pendingStep) + listOfNotNull(if (running) PendingStep(UsingPhone, running = true) else null)
             _pending.update { it + (agentId to PendingReply(text, shown)) }
         }, elapsedMs = { clock.elapsedNow().inWholeMilliseconds })
+        if (access != null) loop.replay(resumed)
         suspend fun record(): Record {
             val info = runCatching { backend.info() }.getOrNull()
             val sent = plan.copy(prompt = (prefix ?: "") + loop.request.prompt)
@@ -202,7 +209,7 @@ class ChatEngine(
             val text = loop.fallback ?: loop.out.toString().takeUnless { phone != null && !native && (callClosed(it) || it.trimStart().startsWith("{")) }.orEmpty()
             return Record(
                 agentId, agent.name, text, loop.firstTokenMs, clock.elapsedNow().inWholeMilliseconds, sent, params, loop.finish, error, started, backend,
-                prefix != null, modelId, info?.accelerator, info?.loadMs?.takeIf { it != loadedBefore }, loop.stats, steps.toList(),
+                prefix != null, modelId, info?.accelerator, info?.loadMs?.takeIf { it != loadedBefore }, loop.stats, steps.toList(), resume,
             )
         }
         try {
@@ -269,6 +276,7 @@ class ChatEngine(
         val loadMs: Long?,
         val stats: RunStats?,
         val steps: List<ToolStep>,
+        val replaces: Long?,
     )
 
     private suspend fun save(r: Record) {
@@ -276,18 +284,19 @@ class ChatEngine(
         val outputTokens = if (text.isEmpty()) 0 else runCatching { r.backend.countTokens(null, text) }.getOrDefault(0)
         val genMs = (r.totalMs - (r.ttft ?: r.totalMs)).coerceAtLeast(1)
         val tps = r.stats?.decodeTokensPerSecond ?: if (outputTokens > 1 && r.ttft != null) (outputTokens - 1) * 1000f / genMs else null
-        // A reply that only ran tools still shows its steps, under the last one's line.
-        val shownText = text.ifEmpty { r.steps.lastOrNull()?.takeIf { r.error == null }?.let { "${it.label}." }.orEmpty() }
+        val shownText = shownReply(text, r.steps, r.error)
         if (shownText.isEmpty() && r.error == null && r.finish != CancelledByUser) {
             problem(r.agentId, ReplyProblem("${r.agentName} didn't have anything to say. Try asking another way.", canRetry = true))
         }
         if (shownText.isNotEmpty()) {
-            dao.insertReply(
+            val id = dao.replaceReply(
+                r.replaces,
                 Message(agentId = r.agentId, role = Role.Agent, text = shownText, createdAt = now(), ttftMs = r.ttft, tokensPerSecond = tps, outputTokens = outputTokens,
                     model = r.model.name, accelerator = r.accelerator,
                 ),
                 r.steps,
             )
+            if (r.error != null) interrupted[r.agentId] = id
         }
         dao.insertGeneration(
             Generation(
@@ -326,6 +335,17 @@ class ChatEngine(
             else -> ", so try again in a moment"
         }
     }
+}
+
+/**
+ * The text a reply is saved with. A reply that only ran tools shows its last step's line. When the model failed after
+ * a tool worked, the reply keeps its steps and says so, since what was done on the phone happened.
+ */
+internal fun shownReply(text: String, steps: List<ToolStep>, error: String?): String {
+    if (text.isNotEmpty()) return text
+    if (error == null) return steps.lastOrNull()?.let { "${it.label}." }.orEmpty()
+    val done = steps.lastOrNull { it.tool.isNotEmpty() && it.outcome == StepOutcome.Done.name } ?: return ""
+    return "${done.label}, then the model stopped."
 }
 
 private fun turnMarker(agentName: String) = Regex("\\n\\s*(User|${Regex.escape(agentName)}):")

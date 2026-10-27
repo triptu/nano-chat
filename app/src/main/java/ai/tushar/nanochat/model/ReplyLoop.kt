@@ -12,7 +12,9 @@ import ai.tushar.nanochat.handset.mightBeCall
 import ai.tushar.nanochat.handset.parseModelOutput
 import ai.tushar.nanochat.handset.stepLabel
 import kotlinx.coroutines.flow.takeWhile
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 
 /** How one tool call ended: the outcome, what the model reads and what the person sees. */
 class ToolRun(val outcome: StepOutcome, val forModel: String, val forPerson: String)
@@ -67,6 +69,27 @@ internal class ReplyLoop(
         request = request.withRound(modelSaid, call, message, call.tool, agentName)
         used += countOrEstimate(backend, modelSaid + message)
         show("", false)
+    }
+
+    /**
+     * Puts the steps a stopped reply already took back into the request, as the calls and results they were, so Try
+     * again goes on from them instead of doing them again. [saved] must already be in [steps].
+     */
+    suspend fun replay(saved: List<ToolStep>) {
+        val taken = saved.filter { it.tool.isNotEmpty() }
+        taken.forEachIndexed { i, s ->
+            val arguments = runCatching { Json.parseToJsonElement(s.arguments).jsonObject }.getOrDefault(JsonObject(emptyMap()))
+            val call = ToolRequest(s.tool, arguments)
+            val message = when {
+                s.label == NotActedLabel -> notActedMessage(s.tool)
+                s.outcome == StepOutcome.Done.name -> resultMessage(s.tool, s.result.take(s.sentChars), native, last = i + 1 >= MaxToolCalls)
+                else -> resultMessage(s.tool, "Error: ${s.result}", native, last = i + 1 >= MaxToolCalls)
+            }
+            val modelSaid = if (native) "" else callJson(call)
+            request = request.withRound(modelSaid, call, message, s.tool, agentName)
+            used += countOrEstimate(backend, modelSaid + message)
+        }
+        if (native && taken.isNotEmpty()) request = request.copy(tools = readOnlySpecs(request.tools))
     }
 
     suspend fun run() {

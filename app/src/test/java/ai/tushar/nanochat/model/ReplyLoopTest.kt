@@ -5,12 +5,15 @@ import ai.tushar.nanochat.handset.ModelOutput
 import ai.tushar.nanochat.handset.StepOutcome
 import ai.tushar.nanochat.handset.ToolRequest
 import ai.tushar.nanochat.handset.parseModelOutput
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.random.Random
@@ -35,8 +38,17 @@ class ReplyLoopTest {
         ToolRun(StepOutcome.Done, text, text)
     }
 
-    private fun loop(message: String, phone: PhoneAccess, steps: MutableList<ToolStep> = mutableListOf()): ReplyLoop {
-        val fake = FakeBackend(random = Random(1), pace = FakePace(firstTokenMs = 0..0, tokensPerSecond = 1000..1000), model = ModelId.GemmaE4B)
+    private fun fake() = FakeBackend(random = Random(1), pace = FakePace(firstTokenMs = 0..0, tokensPerSecond = 1000..1000), model = ModelId.GemmaE4B)
+
+    /** The fake model, failing from its [n]th reply on, as a model does when it runs out of quota partway. */
+    private class FailsAfter(private val n: Int, private val inner: ModelBackend) : ModelBackend by inner {
+        private var replies = 0
+        override fun generate(request: GenerateRequest): Flow<GenerateChunk> =
+            if (replies++ >= n) flow { throw ModelException(ModelErrorKind.Quota, 27, "QUOTA", "Fake: quota") } else inner.generate(request)
+    }
+
+    private fun loop(message: String, phone: PhoneAccess, steps: MutableList<ToolStep> = mutableListOf(), backend: ModelBackend = fake()): ReplyLoop {
+        val fake = backend
         val system = "You are Nano.\n\n" + toolInstructions(schemas.keys, native = false)
         val request = GenerateRequest(system, "## Conversation\nUser: $message\nNano:", 0.7f, 40, 512)
         return ReplyLoop(fake, "Nano", phone, native = false, budget = 3000, request, used = 200, steps, show = { _, _ -> }, elapsedMs = { 0 })
@@ -59,6 +71,30 @@ class ReplyLoopTest {
         l.run()
         assertEquals(listOf("open_app", "search_context"), calls.map { it.tool })
         assertTrue(l.out.toString(), l.out.contains("I opened Maps"))
+    }
+
+    @Test
+    fun aModelFailureAfterAnActionKeepsItAndTryAgainGoesOn() = runTest {
+        val answer = phone { if (it.tool == "open_app") "Opened Maps" else "1 matches for “Toit”:\n27 Oct 19:02 · WhatsApp · Sam: Toit at 8?" }
+        val first = loop("Open Maps and search for Toit", answer, backend = FailsAfter(1, fake()))
+        assertThrows(ModelException::class.java) { kotlinx.coroutines.runBlocking { first.run() } }
+        assertEquals(listOf("open_app"), calls.map { it.tool })
+        assertEquals("Opened Maps, then the model stopped.", shownReply("", first.steps, "QUOTA"))
+
+        calls.clear()
+        val saved = first.steps.toList()
+        val again = loop("Open Maps and search for Toit", answer, steps = saved.toMutableList())
+        again.replay(saved)
+        again.run()
+        assertEquals(listOf("search_context"), calls.map { it.tool })
+        assertEquals(listOf("Opened Maps", "Searched your phone for “Toit”"), again.steps.map { it.label })
+        assertTrue(again.out.toString(), again.out.contains("I opened Maps") && again.out.contains("Found “Toit”"))
+    }
+
+    @Test
+    fun aFailureBeforeAnyToolWorkedSavesNothing() {
+        assertEquals("", shownReply("", emptyList(), "QUOTA"))
+        assertEquals("Opened Maps.", shownReply("", listOf(ToolStep(messageId = 0, position = 0, tool = "open_app", arguments = "{}", label = "Opened Maps", outcome = "Done", result = "", sentChars = 0)), null))
     }
 
     @Test

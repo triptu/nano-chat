@@ -228,6 +228,17 @@ interface ChatDao {
         if (steps.isNotEmpty()) insertToolSteps(steps.mapIndexed { i, s -> s.copy(messageId = id, position = i) })
         return id
     }
+
+    /** Saves a reply in place of [old], the reply it continues, when there is one. */
+    @Transaction
+    suspend fun replaceReply(old: Long?, message: Message, steps: List<ToolStep>): Long {
+        if (old != null) deleteMessage(old)
+        return insertReply(message, steps)
+    }
+
+    @Query("DELETE FROM messages WHERE id = :id")
+    suspend fun deleteMessage(id: Long)
+
     @Insert suspend fun insertMessages(messages: List<Message>)
 
     @Query("DELETE FROM messages WHERE agentId = :agentId")
@@ -274,6 +285,9 @@ interface ChatDao {
 
     @Query("SELECT s.* FROM tool_steps s JOIN messages m ON m.id = s.messageId WHERE m.agentId = :agentId ORDER BY s.messageId, s.position")
     fun toolSteps(agentId: Long): Flow<List<ToolStep>>
+
+    @Query("SELECT * FROM tool_steps WHERE messageId = :messageId ORDER BY position")
+    suspend fun toolStepsFor(messageId: Long): List<ToolStep>
 }
 
 private object AddPrefixCacheColumn : Migration(1, 2) {
