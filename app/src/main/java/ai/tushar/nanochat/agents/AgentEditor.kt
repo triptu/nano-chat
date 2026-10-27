@@ -1,6 +1,19 @@
 package ai.tushar.nanochat.agents
 
 import ai.tushar.nanochat.AppGraph
+import ai.tushar.nanochat.graph
+import ai.tushar.nanochat.handset.ConnectResult
+import ai.tushar.nanochat.handset.HandsetApp
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Switch
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ai.tushar.nanochat.data.Agent
 import ai.tushar.nanochat.data.AgentColor
 import ai.tushar.nanochat.devtools.AgentParamsSection
@@ -76,11 +89,12 @@ data class AgentDraft(
     val maxOutputTokens: Int? = null,
     /** Null means "use the default model". */
     val model: ModelId? = null,
+    val useHandset: Boolean = false,
 ) {
     val canSave: Boolean get() = name.isNotBlank() && personality.isNotBlank()
 
     companion object {
-        fun of(a: Agent) = AgentDraft(a.name, a.color, a.personality, a.temperature, a.topK, a.maxOutputTokens, ModelId.parse(a.model))
+        fun of(a: Agent) = AgentDraft(a.name, a.color, a.personality, a.temperature, a.topK, a.maxOutputTokens, ModelId.parse(a.model), a.useHandset)
     }
 }
 
@@ -93,7 +107,7 @@ class AgentsViewModel(private val graph: AppGraph) : ViewModel() {
             Agent(
                 name = d.name.trim(), color = d.color, personality = d.personality.trim(),
                 temperature = d.temperature, topK = d.topK, maxOutputTokens = d.maxOutputTokens,
-                createdAt = System.currentTimeMillis(), model = d.model?.name,
+                createdAt = System.currentTimeMillis(), model = d.model?.name, useHandset = d.useHandset,
             ),
         )
         then(id)
@@ -104,7 +118,7 @@ class AgentsViewModel(private val graph: AppGraph) : ViewModel() {
             agent.copy(
                 name = d.name.trim(), color = d.color, personality = d.personality.trim(),
                 temperature = d.temperature, topK = d.topK, maxOutputTokens = d.maxOutputTokens,
-                model = d.model?.name,
+                model = d.model?.name, useHandset = d.useHandset,
             ),
         )
     }
@@ -203,6 +217,7 @@ fun AgentEditorSheet(
                 shape = MaterialTheme.shapes.medium,
             )
             ModelPicker(draft.model, defaultModel, models) { draft = draft.copy(model = it) }
+            PhoneSwitch(draft.name.ifBlank { "They" }.trim(), draft.useHandset) { draft = draft.copy(useHandset = it) }
             DevOnly {
                 AgentParamsSection(
                     temperature = draft.temperature,
@@ -258,6 +273,73 @@ private fun ModelRow(selected: Boolean, title: String, subtitle: String, choice:
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * "Use this phone": lets the companion call Handset's tools. The first time, it opens Handset's connect screen; after
+ * that, one connection serves every companion.
+ */
+@Composable
+private fun PhoneSwitch(name: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    val link = LocalContext.current.graph.handset
+    val context = LocalContext.current
+    val connection by link.connection.collectAsStateWithLifecycle()
+    var installed by remember { mutableStateOf(link.installed()) }
+    LifecycleResumeEffect(Unit) {
+        installed = link.installed()
+        onPauseOrDispose {}
+    }
+    var note by remember { mutableStateOf<String?>(null) }
+    val connect = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        when (val result = ConnectResult.parse(r.resultCode, r.data)) {
+            is ConnectResult.Connected -> {
+                link.save(result.connection)
+                note = null
+                onChange(true)
+            }
+            is ConnectResult.NotConnected -> note = result.message
+        }
+    }
+    val checked = on && connection != null && installed
+    fun flip(want: Boolean) {
+        note = null
+        when {
+            !want -> onChange(false)
+            connection != null -> onChange(true)
+            !link.canConnect() -> note = ConnectResult.NoConnectScreen
+            else -> runCatching { connect.launch(HandsetApp.connectIntent()) }.onFailure { note = ConnectResult.NoConnectScreen }
+        }
+    }
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
+                .toggleable(value = checked, enabled = installed, role = Role.Switch, onValueChange = ::flip)
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f).padding(end = 16.dp)) {
+                Text("Use this phone", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    if (installed) "$name can search what you saw, catch up on messages, check the phone, open apps and set alarms, through Handset."
+                    else "Handset isn't installed. It's the app that lets $name use this phone.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = checked, onCheckedChange = null, enabled = installed)
+        }
+        if (!installed) {
+            TextButton(
+                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(HandsetApp.ReadmeUrl))) },
+                contentPadding = PaddingValues(horizontal = 0.dp),
+            ) { Text("About Handset") }
+        }
+        note?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 2.dp))
         }
     }
 }

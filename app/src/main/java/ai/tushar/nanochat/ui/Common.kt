@@ -54,6 +54,8 @@ object Icons {
     @DrawableRes val Play = R.drawable.ic_play_fill
     @DrawableRes val Pause = R.drawable.ic_pause_fill
     @DrawableRes val Waveform = R.drawable.ic_waveform
+    @DrawableRes val Phone = R.drawable.ic_device_mobile
+    @DrawableRes val Warning = R.drawable.ic_warning_circle
 }
 
 @Composable

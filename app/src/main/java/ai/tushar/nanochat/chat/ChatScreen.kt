@@ -11,6 +11,10 @@ import androidx.compose.ui.graphics.Color
 import java.io.File
 import ai.tushar.nanochat.data.Message
 import ai.tushar.nanochat.data.Role
+import ai.tushar.nanochat.data.ToolStep
+import ai.tushar.nanochat.handset.StepOutcome
+import ai.tushar.nanochat.model.PendingReply
+import ai.tushar.nanochat.model.PendingStep
 import ai.tushar.nanochat.devtools.ChatInternalsSheet
 import ai.tushar.nanochat.devtools.DevOnly
 import ai.tushar.nanochat.devtools.ReplyStats
@@ -104,7 +108,7 @@ private const val BubbleMaxFraction = 0.82f
 private val BubbleRadius = 20.dp
 private val BubbleTail = 6.dp
 private val AvatarSize = 30.dp
-private val AvatarGutter = AvatarSize + 8.dp
+internal val AvatarGutter = AvatarSize + 8.dp
 
 /** Actions on the agent itself, handled by the shell because they can close this screen. */
 data class AgentActions(
@@ -124,6 +128,7 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
     var menuOpen by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Confirm?>(null) }
     var viewing by rememberSaveable { mutableStateOf<String?>(null) }
+    var openStep by rememberSaveable { mutableStateOf<Long?>(null) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -142,6 +147,7 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
                                 Text(agent.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 val waking = state.model?.let { it.ready && it.info.loading } == true
                                 val status = when {
+                                    state.pending?.usingPhone == true -> "using your phone…"
                                     state.pending?.thinking == true -> "thinking…"
                                     state.pending != null -> "typing…"
                                     waking -> "waking up…"
@@ -223,13 +229,16 @@ fun ChatScreen(vm: ChatViewModel, showBack: Boolean, onBack: () -> Unit, actions
                         ),
                     )
                 } else {
-                    ChatBody(vm, state, agent, model, tint, onOpenPhoto = { viewing = it })
+                    ChatBody(vm, state, agent, model, tint, onOpenPhoto = { viewing = it }, onOpenStep = { openStep = it.id })
                 }
             }
         }
     }
 
     viewing?.let { name -> PhotoViewer(vm.file(name), onClose = { viewing = null }) }
+    openStep?.let { id ->
+        state.steps.values.flatten().firstOrNull { it.id == id }?.let { StepSheet(it, onDismiss = { openStep = null }) }
+    }
 
     if (showInternals) {
         val generation by vm.lastGeneration.collectAsStateWithLifecycle()
@@ -266,7 +275,9 @@ private enum class Confirm { Clear, Delete }
 
 /** Messages and composer, once the model is ready. */
 @Composable
-private fun ChatBody(vm: ChatViewModel, state: ChatState, agent: Agent, model: ChatModel, tint: Color, onOpenPhoto: (String) -> Unit) {
+private fun ChatBody(
+    vm: ChatViewModel, state: ChatState, agent: Agent, model: ChatModel, tint: Color, onOpenPhoto: (String) -> Unit, onOpenStep: (ToolStep) -> Unit,
+) {
     val drafts by vm.drafts.collectAsStateWithLifecycle()
     val recording by vm.recording.collectAsStateWithLifecycle()
     var denied by rememberSaveable { mutableStateOf<Denied?>(null) }
@@ -275,7 +286,7 @@ private fun ChatBody(vm: ChatViewModel, state: ChatState, agent: Agent, model: C
             if (state.loaded && state.messages.isEmpty() && state.pending == null) {
                 EmptyChat(agent, tint)
             } else {
-                MessageList(state, agent, tint, vm::file, onOpenPhoto)
+                MessageList(state, agent, tint, vm::file, onOpenPhoto, onOpenStep)
             }
         }
         AnimatedVisibility(state.problem != null) {
@@ -328,14 +339,14 @@ private sealed interface ChatRow {
     data class Bubble(val message: Message, val lastInGroup: Boolean, val firstInGroup: Boolean) : ChatRow {
         override val key: Any get() = message.id
     }
-    data class Pending(val text: String) : ChatRow {
+    data class Pending(val text: String, val steps: List<PendingStep>) : ChatRow {
         override val key: Any get() = "pending"
     }
 }
 
-private fun rows(messages: List<Message>, pending: String?): List<ChatRow> {
+private fun rows(messages: List<Message>, pending: PendingReply?): List<ChatRow> {
     val out = ArrayList<ChatRow>(messages.size + 1)
-    if (pending != null) out += ChatRow.Pending(pending)
+    if (pending != null) out += ChatRow.Pending(pending.text, pending.steps)
     for (i in messages.indices.reversed()) {
         val m = messages[i]
         val next = messages.getOrNull(i + 1)
@@ -347,10 +358,12 @@ private fun rows(messages: List<Message>, pending: String?): List<ChatRow> {
 }
 
 @Composable
-private fun MessageList(state: ChatState, agent: Agent, tint: Color, fileOf: (String) -> File, onOpenPhoto: (String) -> Unit) {
+private fun MessageList(
+    state: ChatState, agent: Agent, tint: Color, fileOf: (String) -> File, onOpenPhoto: (String) -> Unit, onOpenStep: (ToolStep) -> Unit,
+) {
     val listState = rememberLazyListState()
     val voice = rememberVoicePlayer()
-    val items = remember(state.messages, state.pending) { rows(state.messages, state.pending?.text) }
+    val items = remember(state.messages, state.pending) { rows(state.messages, state.pending) }
     val lastId = state.messages.lastOrNull()?.id
     LaunchedEffect(lastId, state.pending?.thinking) {
         if (listState.firstVisibleItemIndex <= 2) listState.animateScrollToItem(0)
@@ -365,12 +378,15 @@ private fun MessageList(state: ChatState, agent: Agent, tint: Color, fileOf: (St
         ) {
             itemsIndexed(items, key = { _, r -> r.key }) { _, row ->
                 when (row) {
-                    is ChatRow.Pending -> AgentLine(tint, showAvatar = true, topGap = 10.dp, maxBubble = maxBubble) {
-                        if (row.text.isEmpty()) {
-                            Bubble(Role.Agent, tail = true) { ThinkingDots(tint, Modifier.padding(vertical = 6.dp, horizontal = 2.dp)) }
-                        } else {
-                            Bubble(Role.Agent, tail = true) { BubbleText(row.text, Role.Agent) }
+                    is ChatRow.Pending -> Column {
+                        AgentLine(tint, showAvatar = true, topGap = 10.dp, maxBubble = maxBubble) {
+                            if (row.text.isEmpty()) {
+                                Bubble(Role.Agent, tail = true) { ThinkingDots(tint, Modifier.padding(vertical = 6.dp, horizontal = 2.dp)) }
+                            } else {
+                                Bubble(Role.Agent, tail = true) { BubbleText(row.text, Role.Agent) }
+                            }
                         }
+                        row.steps.forEach { StepLine(it.label, it.outcome, cut = false, running = it.running, detail = null, onClick = null) }
                     }
                     is ChatRow.Bubble -> {
                         val gap = if (row.firstInGroup) 10.dp else 2.dp
@@ -380,6 +396,12 @@ private fun MessageList(state: ChatState, agent: Agent, tint: Color, fileOf: (St
                             Column {
                                 AgentLine(tint, showAvatar = row.lastInGroup, topGap = gap, maxBubble = maxBubble) {
                                     Bubble(Role.Agent, tail = row.lastInGroup, speech = "${agent.name}: ${row.message.text}") { BubbleText(row.message.text, Role.Agent) }
+                                }
+                                state.steps[row.message.id]?.forEach { step ->
+                                    val outcome = StepOutcome.entries.firstOrNull { it.name == step.outcome } ?: StepOutcome.Failed
+                                    // A refusal, or a phone that couldn't be reached, says what to do right in the chat.
+                                    val detail = step.result.takeIf { outcome == StepOutcome.Refused || step.tool.isEmpty() }
+                                    StepLine(step.label, outcome, step.cut, running = false, detail = detail, onClick = { onOpenStep(step) }.takeIf { step.tool.isNotEmpty() })
                                 }
                                 DevOnly { ReplyStats(row.message, Modifier.padding(start = AvatarGutter + 6.dp, top = 3.dp)) }
                             }

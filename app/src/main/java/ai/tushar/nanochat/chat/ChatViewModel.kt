@@ -9,6 +9,7 @@ import ai.tushar.nanochat.data.Attachment
 import ai.tushar.nanochat.data.AttachmentKind
 import ai.tushar.nanochat.data.Generation
 import ai.tushar.nanochat.data.Message
+import ai.tushar.nanochat.data.ToolStep
 import ai.tushar.nanochat.model.MediaSupport
 import ai.tushar.nanochat.model.ModelId
 import ai.tushar.nanochat.model.ModelInfo
@@ -51,6 +52,8 @@ data class ChatState(
     val messages: List<Message> = emptyList(),
     /** Photos and voice notes by message id. */
     val attachments: Map<Long, List<Attachment>> = emptyMap(),
+    /** Handset tool steps by the id of the reply that ran them. */
+    val steps: Map<Long, List<ToolStep>> = emptyMap(),
     val pending: PendingReply? = null,
     val problem: ReplyProblem? = null,
     val model: ChatModel? = null,
@@ -76,13 +79,18 @@ class ChatViewModel(private val graph: AppGraph, val agentId: Long) : ViewModel(
         ChatModel(id, states.getValue(id), infos.getValue(id))
     }.distinctUntilChanged()
 
+    private class Saved(val agent: Agent?, val messages: List<Message>, val attachments: List<Attachment>, val steps: List<ToolStep>)
+
     val state: StateFlow<ChatState> = combine(
-        combine(graph.dao.agent(agentId), graph.dao.messages(agentId), graph.dao.attachments(agentId), ::Triple),
+        combine(graph.dao.agent(agentId), graph.dao.messages(agentId), graph.dao.attachments(agentId), graph.dao.toolSteps(agentId), ::Saved),
         graph.engine.pending.map { it[agentId] },
         graph.engine.problems.map { it[agentId] },
         model,
-    ) { (agent, messages, attachments), pending, problem, model ->
-        ChatState(agent, messages, attachments.groupBy { it.messageId }, pending, problem, model, loaded = true)
+    ) { saved, pending, problem, model ->
+        ChatState(
+            saved.agent, saved.messages, saved.attachments.groupBy { it.messageId }, saved.steps.groupBy { it.messageId },
+            pending, problem, model, loaded = true,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ChatState())
 
     val drafts: StateFlow<List<DraftAttachment>> =
