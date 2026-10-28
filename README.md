@@ -24,7 +24,7 @@ Each companion is one ongoing chat, like a contact, with its own name, colour an
 <img src="docs/shots/fold_gemma_voice.jpg" width="220" alt="Basil answering a voice note with a recipe">
 </p>
 
-Gemini Nano is the default. It is part of Android on recent Pixel and Galaxy phones and Android fetches it once, outside the app. Gemma 4 E4B is a larger model you download once inside the app. It follows a personality more closely, understands voice notes, and suits phones with a lot of memory (tested on 12 GB). You pick the model for each companion.
+Gemini Nano is the default. It is part of Android on recent Pixel and Galaxy phones and Android fetches it once, outside the app. Gemma 4 E4B is a larger model you download once inside the app. It follows a personality more closely, understands voice notes, and suits phones with a lot of memory. You pick the model for each companion.
 
 ## A companion can use your phone
 
@@ -35,7 +35,7 @@ Gemini Nano is the default. It is part of Android on recent Pixel and Galaxy pho
 
 Install [Handset](https://handset.tushar.ai) and turn on Use this phone for a companion. It can then search what you saw on screen and in notifications, catch up on messages, open apps, and set alarms and timers. Each step shows as a line under the reply, and tapping it shows what came back.
 
-Handset shows what Nano Chat asks for, with every source off until you switch it on, and a companion takes only a few steps per reply. It can't see or tap the current screen, and once a reply has read anything from the phone it can't open an app or set an alarm in that same reply.
+Handset shows what Nano Chat asks for, with every source off until you switch it on, and a companion takes only a few steps per reply. It can't see or tap the current screen, and once a reply has read your messages, what you saw, your day or what's playing, it can't open an app or set an alarm in that same reply.
 
 ## Install
 
