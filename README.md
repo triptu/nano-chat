@@ -2,9 +2,9 @@
 
 An Android app for chatting with AI companions. The models run on your phone, with no account, no analytics and no server behind the app.
 
-<a href="https://github.com/triptu/nano-chat/blob/main/site/public/media/trailer.mp4"><img src="site/public/media/poster.png" width="720" alt="The trailer's poster: Basil answering a photo of eggs with a frittata recipe, under the words Show it a photo. Links to the trailer."></a>
+<a href="https://github.com/triptu/nano-chat/blob/main/site/public/media/trailer-v3.mp4"><img src="site/public/media/poster-v3.jpg" width="720" alt="The trailer's poster: Basil turning a photo of a fridge into a recipe, under the words Dinner, sorted. Links to the trailer."></a>
 
-[Download the APK](https://github.com/triptu/nano-chat/releases/latest/download/nano-chat.apk) · [Watch the trailer](https://github.com/triptu/nano-chat/blob/main/site/public/media/trailer.mp4) · [nanochat.tushar.ai](https://nanochat.tushar.ai)
+[Download the APK](https://github.com/triptu/nano-chat/releases/latest/download/nano-chat.apk) · [Watch the trailer](https://github.com/triptu/nano-chat/blob/main/site/public/media/trailer-v3.mp4) · [nanochat.tushar.ai](https://nanochat.tushar.ai)
 
 ## Companions kept like contacts
 
