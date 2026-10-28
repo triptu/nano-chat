@@ -20,7 +20,7 @@ Everything about the code that the README leaves out. The code is one Gradle mod
 ./gradlew :app:testDebugUnitTest   # AGP 9 runs unit tests on the debug variant only
 ```
 
-`minSdk` is 31 (Android 12). Release builds are minified. They sign with the key in `~/.config/nano-chat/` when that folder exists, or with the `NANOCHAT_KEYSTORE` and `NANOCHAT_KEYSTORE_PASSWORD` variables, and with the debug key otherwise. Android refuses an update signed with a different key. The version code is the minutes since the start of 2026, so a newer build always installs over an older one. ML Kit needs the R8 keep rules in `app/proguard-rules.pro`, since the beta crashes on launch without them.
+`minSdk` is 31 (Android 12). Release builds are minified. They sign with the key in `~/.config/nano-chat/` when that folder exists, or with the `NANOCHAT_KEYSTORE` and `NANOCHAT_KEYSTORE_PASSWORD` variables, and with the debug key otherwise. Android refuses an update signed with a different key. The version code is the minutes since the start of 2026, so a newer build always installs over an older one. The release workflow lists the APK's SHA-256 and the signing certificate's SHA-256 in each release's notes, so a user can check a download. ML Kit needs the R8 keep rules in `app/proguard-rules.pro`, since the beta crashes on launch without them.
 
 ## Models
 
